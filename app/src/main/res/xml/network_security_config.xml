@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Applies to the app's own Java networking (e.g. optional search suggestions). Web content is
+     fetched by GeckoView, which applies its own transport policy. -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false" />
+</network-security-config>
