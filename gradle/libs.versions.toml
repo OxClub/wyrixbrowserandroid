@@ -2,7 +2,7 @@
 # resolved against live repositories (no network during authoring). CI is the
 # first real resolution. See docs/DEPENDENCIES.md for the verification procedure.
 [versions]
-agp = "8.7.3"
+agp = "8.9.1"
 kotlin = "2.0.21"
 ksp = "2.0.21-1.0.28"
 composeBom = "2024.10.01"
