@@ -16,7 +16,7 @@ if (geckoVersion.isEmpty()) {
 
 android {
     namespace = "com.wyrix.browser"
-    compileSdk = 37
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.wyrix.browser"
