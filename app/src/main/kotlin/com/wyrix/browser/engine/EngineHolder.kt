@@ -7,6 +7,8 @@ import org.mozilla.geckoview.GeckoRuntime
 import org.mozilla.geckoview.GeckoRuntimeSettings
 import org.mozilla.geckoview.GeckoSession
 import org.mozilla.geckoview.StorageController.ClearFlags
+import java.util.Collections
+import java.util.WeakHashMap
 
 /**
  * Owns the single GeckoRuntime for this process (GeckoView allows exactly one). Created lazily so
@@ -42,12 +44,17 @@ class EngineHolder(private val app: Application) {
         }
     }
 
+    // GeckoView's current ContentBlockingController does not expose the old
+    // checkException/addException/removeException methods.
+    private val sessionExceptions =
+        Collections.synchronizedMap(WeakHashMap<GeckoSession, Boolean>())
+
     suspend fun isSiteException(session: GeckoSession): Boolean =
-        runtime.contentBlockingController.checkException(session).awaitOrNull() ?: false
+        sessionExceptions[session] == true
 
     fun setSiteException(session: GeckoSession, enabled: Boolean) {
-        if (enabled) runtime.contentBlockingController.addException(session)
-        else runtime.contentBlockingController.removeException(session)
+        sessionExceptions[session] = enabled
+        session.settings.setUseTrackingProtection(!enabled)
     }
 
     fun resetPermission(perm: GeckoSession.PermissionDelegate.ContentPermission) {

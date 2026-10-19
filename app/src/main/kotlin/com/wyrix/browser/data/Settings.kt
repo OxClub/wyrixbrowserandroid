@@ -10,7 +10,6 @@ import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
-import androidx.datastore.preferences.core.toMutablePreferences
 import androidx.datastore.preferences.preferencesDataStore
 import com.wyrix.browser.core.SearchEngines
 import com.wyrix.browser.tabs.Workspaces

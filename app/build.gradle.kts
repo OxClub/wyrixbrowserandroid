@@ -92,6 +92,7 @@ dependencies {
     implementation(libs.room.ktx)
     ksp(libs.room.compiler)
     implementation(libs.datastore.preferences)
+    implementation("androidx.datastore:datastore-preferences-core:1.1.1")
     implementation(libs.coroutines.android)
 
     debugImplementation(libs.compose.ui.tooling)
