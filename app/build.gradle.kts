@@ -26,7 +26,7 @@ android {
         versionName = "0.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "GECKOVIEW_VERSION", "\"$geckoVersion\"")
-        ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64") }
+        ndk { abiFilters += providers.gradleProperty("wyrix.abis").orElse("arm64-v8a").get().split(",") }
     }
 
     val keystorePath = System.getenv("WYRIX_KEYSTORE_PATH")
@@ -63,7 +63,10 @@ android {
         compose = true
         buildConfig = true
     }
-    packaging { resources.excludes += "/META-INF/{AL2.0,LGPL2.1}" }
+    packaging {
+        resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
+        jniLibs { useLegacyPackaging = true } // compress native libs in the APK
+    }
     testOptions { unitTests.isReturnDefaultValues = true }
     sourceSets {
         getByName("main").java.srcDirs("src/main/kotlin")
