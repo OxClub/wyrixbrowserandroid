@@ -122,7 +122,11 @@ object ReaderExtractor {
             val tag = m.groupValues[1].lowercase()
             val inner = m.groupValues[2]
             val text = textOf(inner)
-            if (text.isEmpty() || text == last) continue
+            if (text.isEmpty()) continue
+              if (text == last) {
+                  last = ""
+                  continue
+              }
             val linkChars = ANCHOR.findAll(inner).sumOf { textOf(it.groupValues[1]).length }
             val linkHeavy = text.isNotEmpty() && linkChars.toDouble() / text.length > 0.5 && text.length < 200
             when (tag) {
