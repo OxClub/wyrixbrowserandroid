@@ -101,8 +101,31 @@ object ReaderExtractor {
 
     fun extract(html: String, url: String): ReaderArticle? {
         if (html.isBlank()) return null
-        val src = if (html.length > MAX_HTML_CHARS) html.take(MAX_HTML_CHARS) else html
-        val title = (TITLE_OG.find(src) ?: TITLE_OG2.find(src))?.groupValues?.get(1)?.let { textOf(it) }?.takeIf { it.isNotBlank() }
+        val src = if (html.length > MAX_HTML_CHARS) {
+          val prefix = html.take(MAX_HTML_CHARS)
+          buildString(prefix.length + 32) {
+              append(prefix)
+              if (Regex("(?is)<article\\b").containsMatchIn(prefix) &&
+                  !Regex("(?is)</article\\s*>").containsMatchIn(prefix)) {
+                  append("</article>")
+              }
+              if (Regex("(?is)<main\\b").containsMatchIn(prefix) &&
+                  !Regex("(?is)</main\\s*>").containsMatchIn(prefix)) {
+                  append("</main>")
+              }
+              if (Regex("(?is)<body\\b").containsMatchIn(prefix) &&
+                  !Regex("(?is)</body\\s*>").containsMatchIn(prefix)) {
+                  append("</body>")
+              }
+              if (Regex("(?is)<html\\b").containsMatchIn(prefix) &&
+                  !Regex("(?is)</html\\s*>").containsMatchIn(prefix)) {
+                  append("</html>")
+              }
+          }
+      } else {
+          html
+      }
+      val title = (TITLE_OG.find(src) ?: TITLE_OG2.find(src))?.groupValues?.get(1)?.let { textOf(it) }?.takeIf { it.isNotBlank() }
             ?: TITLE_TAG.find(src)?.groupValues?.get(1)?.let { textOf(it) }?.takeIf { it.isNotBlank() }
             ?: H1.find(src)?.groupValues?.get(1)?.let { textOf(it) }.orEmpty()
         val site = SITE_OG.find(src)?.groupValues?.get(1)?.let { textOf(it) }?.takeIf { it.isNotBlank() } ?: (UrlTools.hostOf(url)?.removePrefix("www.") ?: "")
