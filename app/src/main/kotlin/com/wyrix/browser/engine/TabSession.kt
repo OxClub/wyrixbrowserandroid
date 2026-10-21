@@ -44,7 +44,7 @@ class TabSession(
         session.promptDelegate = promptDelegate()
         session.contentBlockingDelegate = object : ContentBlocking.Delegate {
             override fun onContentBlocked(session: GeckoSession, event: ContentBlocking.BlockEvent) {
-                emit(TabEvent.Blocked(id))
+                emit(TabEvent.Blocked(id, runCatching { UrlTools.hostOf(event.uri) }.getOrNull()))
             }
         }
     }

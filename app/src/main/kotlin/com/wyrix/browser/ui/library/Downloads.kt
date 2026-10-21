@@ -18,19 +18,37 @@ import com.wyrix.browser.data.DownloadEntity
 import com.wyrix.browser.data.DownloadOutcome
 import com.wyrix.browser.data.DownloadStatus
 import com.wyrix.browser.ui.common.*
+import com.wyrix.browser.ui.browser.copyText
+import android.text.format.DateUtils
+import androidx.compose.foundation.layout.Row
 import kotlinx.coroutines.launch
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DownloadsScreen(vm: BrowserViewModel) {
     val items by vm.downloads.collectAsStateWithLifecycle()
     val coordinator = vm.downloadCoordinator
     val scope = rememberCoroutineScope()
+    var filter by remember { mutableIntStateOf(0) }
+    val shown = when (filter) {
+        1 -> items.filter { it.status in DownloadStatus.ACTIVE }
+        2 -> items.filter { it.status == DownloadStatus.SUCCESS }
+        3 -> items.filter { it.status == DownloadStatus.FAILED }
+        else -> items
+    }
     ScreenScaffold("Downloads", onBack = { vm.closeScreen() }, actions = {
         TextButton(onClick = { scope.launch { coordinator.clearFinished() } }) { Text("Clear finished") }
     }) { pad ->
-        LazyColumn(Modifier.padding(pad).fillMaxSize()) {
-            items(items, key = { it.id }) { d -> DownloadRow(d, vm) }
-            if (items.isEmpty()) item { EmptyState("No downloads", "Files you download in normal tabs appear here. Downloads from private tabs are saved but not listed.") }
+        Column(Modifier.padding(pad).fillMaxSize()) {
+            Row(Modifier.padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf("All", "Active", "Done", "Failed").forEachIndexed { i, label ->
+                    FilterChip(selected = filter == i, onClick = { filter = i }, label = { Text(label) })
+                }
+            }
+            LazyColumn(Modifier.fillMaxSize()) {
+                items(shown, key = { it.id }) { d -> DownloadRow(d, vm) }
+                if (shown.isEmpty()) item { EmptyState(if (items.isEmpty()) "No downloads" else "Nothing here", "Files you download in normal tabs appear here. Downloads from private tabs are saved but not listed.") }
+            }
         }
     }
 }
@@ -52,7 +70,7 @@ private fun DownloadRow(d: DownloadEntity, vm: BrowserViewModel) {
                     DownloadStatus.PAUSED -> "Paused"
                     DownloadStatus.PENDING -> "Waiting…"
                     else -> "${formatBytes(d.downloadedBytes)} of ${formatBytes(d.totalBytes)}"
-                }, color = if (d.status == DownloadStatus.FAILED) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
+                } + " · " + DateUtils.getRelativeTimeSpanString(d.startedAt, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS), color = if (d.status == DownloadStatus.FAILED) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
                 if (d.status in DownloadStatus.ACTIVE || (d.status == DownloadStatus.RUNNING)) {
                     if (progress != null) LinearProgressIndicator(progress = { progress }, Modifier.fillMaxWidth().padding(top = 4.dp)) else LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = 4.dp))
                 }
@@ -69,6 +87,8 @@ private fun DownloadRow(d: DownloadEntity, vm: BrowserViewModel) {
                     }
                     if (d.status == DownloadStatus.FAILED) DropdownMenuItem({ Text("Retry") }, { menu = false
                         scope.launch { val r = c.retry(d); if (r is DownloadOutcome.Unsupported) vm.toast(r.reason) } })
+                    if (d.status in DownloadStatus.ACTIVE) DropdownMenuItem({ Text("Cancel download") }, { menu = false; scope.launch { c.remove(d, true) } })
+                    if (d.url.startsWith("http")) DropdownMenuItem({ Text("Copy link") }, { menu = false; copyText(ctx, d.url); vm.toast("Link copied") })
                     DropdownMenuItem({ Text("Remove from list") }, { menu = false; scope.launch { c.remove(d, false) } })
                     DropdownMenuItem({ Text("Delete file") }, { menu = false; scope.launch { c.remove(d, true) } })
                 }

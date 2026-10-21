@@ -105,6 +105,16 @@ data class TabsState(
         return copy(recentlyClosed = recentlyClosed.drop(1)).withTab(reopened, select = true)
     }
 
+    /** Reopens one specific entry of [recentlyClosed] (chosen from the list) under a new id. */
+    fun withReopenedId(closedId: String, newId: String, now: Long): TabsState {
+        val t = recentlyClosed.firstOrNull { it.id == closedId } ?: return this
+        if (!canAdd()) return this
+        val reopened = t.copy(id = newId, showHome = false, lastAccessed = now, createdAt = now)
+        return copy(recentlyClosed = recentlyClosed.filter { it.id != closedId }).withTab(reopened, select = true)
+    }
+
+    fun withoutRecentlyClosed(): TabsState = copy(recentlyClosed = emptyList())
+
     fun withDuplicate(id: String, newId: String, now: Long): TabsState {
         val t = tab(id) ?: return this
         if (!canAdd()) return this

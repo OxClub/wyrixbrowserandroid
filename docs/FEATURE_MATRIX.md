@@ -17,7 +17,8 @@ Legend: **Implemented** = code exists and is wired into the UI, *untested on dev
 | Tab reorder | Partial | Move earlier/later actions; no drag-and-drop |
 | Tab groups, workspaces ("spaces") | Implemented | Room-backed; default Personal/Work/Study |
 | Tab Galaxy | Partial | Lightweight 2D overview; no 3D, grid is the default |
-| Tab thumbnails | Not implemented | Memory cost; letter tiles used |
+| Tab previews | Implemented (0.2.0) | Snapshot of the page taken when you open the tab switcher; kept in memory only (max 24), never written to disk. Tabs you haven't viewed this session show a letter tile |
+| Recently closed tabs list, swipe-to-close, animated reordering | Implemented (0.2.0) | List shows up to 20 normal tabs; private tabs are never remembered |
 | Favicons | Not implemented | GeckoView exposes no favicon event; fetching icons ourselves was out of scope. Letter tiles used |
 | Tab suspension / memory trimming | Implemented | Max 8 live sessions, LRU suspend with session-state restore; `onTrimMemory` |
 | Session restore after restart | Implemented | URL + engine session state, validated on load (`TabMapper`) |
@@ -40,7 +41,16 @@ Legend: **Implemented** = code exists and is wired into the UI, *untested on dev
 | Onboarding, default-browser role request, about/licenses/help | Implemented | |
 | Fullscreen video, hardware keyboard shortcuts | Implemented | Ctrl+T/W/R/N |
 | Rotation/config changes | Implemented | Activity handles config changes itself |
-| Find in page, reader mode, translation, extensions, sync, password manager, autofill | Not implemented | Out of scope for this pass |
+| Reader mode | Partial (0.2.0) | Text-only. The app fetches the page itself (HTTPS, no cookies) and extracts the article with a heuristic, so JavaScript-rendered, paywalled or login-only pages fail with a message. Adjustable size/typeface; articles from normal tabs can be saved for offline reading (max 200) |
+| Page translation | Partial (0.2.0) | **Not on-device.** Opens Google Translate's website for the page after an explicit warning that the address is sent to Google. Gecko's built-in translations API was not used because it couldn't be verified offline |
+| Biometric lock | Implemented (0.2.0) | Whole app and/or private tabs, using the platform prompt (biometrics or device PIN on Android 11+, biometrics only on 9-10). Hides content in recents while enabled |
+| Per-site tracking protection | Implemented (0.2.0) | Stored by WYRIX per host and applied to the session on load (GeckoView 140 has no persistent exception API). Takes effect with a reload |
+| Tracker counts | Implemented (0.2.0) | Unique tracker hosts per page load (not raw requests), with a host list in site details |
+| Site permissions manager | Partial (0.2.0) | Lists permissions seen while browsing (normal tabs only). Reset is immediate for sites seen this session, otherwise applied on your next visit to that site |
+| Address bar quick actions | Implemented (0.2.0) | Long-press for copy/share/paste-and-go; search-engine chips while typing; clipboard read only when you tap Paste and go |
+| Toolbar long-press actions | Implemented (0.2.0) | Back: History. Home: new tab. Tabs: new/private/close/reopen. Reload: hard reload |
+| Bookmark move-to-folder, downloads filters/cancel/copy-link, recently visited & saved-articles home sections | Implemented (0.2.0) | |
+| Find in page, extensions, sync, password manager, autofill | Not implemented | Out of scope |
 | Split view, picture-in-picture, tablet-specific layouts | Not implemented | |
 | Localization | Not implemented | UI strings are English literals in Compose; only `app_name` is a resource |
 | Accessibility | Partial | Content descriptions, 48dp targets, high-contrast option. No TalkBack pass was possible |

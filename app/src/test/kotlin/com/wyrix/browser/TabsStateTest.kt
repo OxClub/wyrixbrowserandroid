@@ -44,6 +44,15 @@ class TabsStateTest {
         val p = state(t("p", priv = true)).withClosed("p")
         assertTrue(p.recentlyClosed.isEmpty())
     }
+    @Test fun reopenSpecificClosedTab() {
+        var s = state(t("a"), t("b"), t("c"), sel = "c").withClosed("a").withClosed("b")
+        assertEquals(2, s.recentlyClosed.size)
+        s = s.withReopenedId("a", "a2", 9)
+        assertEquals("https://a.example", s.selected!!.url); assertEquals("a2", s.selectedId)
+        assertEquals(listOf("b"), s.recentlyClosed.map { it.id })
+        assertEquals(s, s.withReopenedId("missing", "x", 1))
+        assertTrue(s.withoutRecentlyClosed().recentlyClosed.isEmpty())
+    }
     @Test fun blankTabsNotRemembered() = assertTrue(state(t("a", url = "")).withClosed("a").recentlyClosed.isEmpty())
     @Test fun recentlyClosedCapped() {
         var s = TabsState()

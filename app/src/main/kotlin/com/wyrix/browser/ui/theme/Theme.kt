@@ -9,6 +9,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
@@ -118,6 +119,8 @@ fun WyrixTheme(settings: Settings, privateMode: Boolean, content: @Composable ()
         c.isAppearanceLightNavigationBars = !dark
     }
     CompositionLocalProvider(LocalMotion provides Motion(reduced)) {
-        MaterialTheme(colorScheme = scheme, typography = WyrixTypography, shapes = WyrixShapes, content = content)
+        MaterialTheme(colorScheme = scheme, typography = WyrixTypography, shapes = WyrixShapes) {
+            Surface(color = scheme.background, contentColor = scheme.onBackground, content = content)
+        }
     }
 }

@@ -85,8 +85,14 @@ class MainActivity : ComponentActivity() {
         return super.dispatchKeyEvent(event)
     }
 
+    override fun onStart() {
+        super.onStart()
+        vm.onForegrounded()
+    }
+
     override fun onStop() {
         super.onStop()
+        vm.onBackgrounded()
         vm.persistNow()
     }
 

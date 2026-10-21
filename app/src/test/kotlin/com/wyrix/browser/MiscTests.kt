@@ -96,3 +96,19 @@ class TabMapperTest {
     @Test fun respectsPositionOrder() = assertEquals(listOf("b", "a"), TabMapper.restore(listOf(row("a", pos = 5), row("b", pos = 1)), emptySet(), setOf("personal")).tabs.map { it.id })
     @Test fun blankTabsNeverCarryState() = assertTrue(TabMapper.restore(listOf(row("a", url = "", state = "s")), emptySet(), setOf("personal")).states.isEmpty())
 }
+
+class TranslateLanguagesTest {
+    @Test fun buildsEncodedUrl() {
+        val u = com.wyrix.browser.core.TranslateLanguages.buildUrl("https://a.example/p?x=1&y=2", "fr")!!
+        assertTrue(u.startsWith("https://translate.google.com/translate?sl=auto&tl=fr&u="))
+        assertTrue(u.contains("https%3A%2F%2Fa.example%2Fp%3Fx%3D1%26y%3D2"))
+    }
+    @Test fun rejectsUnsupportedLanguageAndBadUrls() {
+        val t = com.wyrix.browser.core.TranslateLanguages
+        assertNull(t.buildUrl("https://a.example", "xx")); assertNull(t.buildUrl("javascript:1", "fr")); assertNull(t.buildUrl("https://u:p@a.example/", "fr"))
+    }
+    @Test fun defaultFallsBackToEnglish() {
+        val t = com.wyrix.browser.core.TranslateLanguages
+        assertEquals("de", t.defaultFor("DE")); assertEquals("en", t.defaultFor("sw"))
+    }
+}

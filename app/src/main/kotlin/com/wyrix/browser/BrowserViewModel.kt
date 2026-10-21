@@ -1,6 +1,7 @@
 package com.wyrix.browser
 
 import android.content.Context
+import android.graphics.Bitmap
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -11,15 +12,26 @@ import com.wyrix.browser.core.SearchEngines
 import com.wyrix.browser.core.UrlParser
 import com.wyrix.browser.core.UrlTools
 import com.wyrix.browser.core.BookmarkHtml
+import com.wyrix.browser.core.ReaderArticle
+import com.wyrix.browser.core.ReaderExtractor
+import com.wyrix.browser.core.TranslateLanguages
 import com.wyrix.browser.data.*
 import com.wyrix.browser.engine.*
 import com.wyrix.browser.tabs.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import org.mozilla.geckoview.GeckoSession
+import org.mozilla.geckoview.GeckoView
 import java.util.UUID
 
-enum class Screen { BROWSER, TABS, BOOKMARKS, HISTORY, DOWNLOADS, SETTINGS, ABOUT }
+enum class Screen { BROWSER, TABS, BOOKMARKS, HISTORY, DOWNLOADS, SETTINGS, ABOUT, READER, SAVED }
+
+sealed interface ReaderState {
+    data object Idle : ReaderState
+    data object Loading : ReaderState
+    data class Ready(val article: ReaderArticle, val saved: Boolean, val fromPrivate: Boolean) : ReaderState
+    data class Failed(val message: String) : ReaderState
+}
 
 data class Suggestion(val kind: Kind, val title: String, val subtitle: String, val action: String, val tabId: String? = null) {
     enum class Kind { TAB, BOOKMARK, HISTORY, COMMAND, REMOTE, SEARCH }
@@ -63,8 +75,31 @@ class BrowserViewModel(private val app: WyrixApp) : ViewModel() {
 
     val privateMode: StateFlow<Boolean> = _tabs.map { it.selected?.isPrivate == true }
         .stateIn(viewModelScope, SharingStarted.Eagerly, false)
-    val secureWindow: StateFlow<Boolean> = combine(settings, privateMode) { s, p -> s?.secureWindowInPrivate == true && p }
+    val secureWindow: StateFlow<Boolean> = combine(settings, privateMode) { s, p -> (s?.secureWindowInPrivate == true && p) || s?.lockApp == true || (s?.lockPrivate == true && p) }
         .stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
+    private val _thumbs = MutableStateFlow<Map<String, Bitmap>>(emptyMap())
+    /** In-memory tab previews (never written to disk). */
+    val thumbnails: StateFlow<Map<String, Bitmap>> = _thumbs.asStateFlow()
+    private val _blockedHosts = MutableStateFlow<Map<String, List<String>>>(emptyMap())
+    /** Unique tracker hosts blocked on each tab's current page. */
+    val blockedHosts: StateFlow<Map<String, List<String>>> = _blockedHosts.asStateFlow()
+    private val blockedSeen = HashMap<String, LinkedHashSet<String>>()
+    private val lastTrackingHost = HashMap<String, String>()
+    private val permCache = HashMap<String, List<SitePermissionInfo>>()
+    val recentHistory = c.history.observe("", 6).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    private val _reader = MutableStateFlow<ReaderState>(ReaderState.Idle)
+    val reader: StateFlow<ReaderState> = _reader.asStateFlow()
+    private val _saved = MutableStateFlow<List<SavedArticleMeta>>(emptyList())
+    val savedArticles: StateFlow<List<SavedArticleMeta>> = _saved.asStateFlow()
+    private var readerFromSaved = false
+    private val _appLocked = MutableStateFlow(false)
+    private val _privateLocked = MutableStateFlow(false)
+    private var backgroundedAt = 0L
+    /** True while the biometric lock covers the browser (whole app, or private tabs only). */
+    val locked: StateFlow<Boolean> = combine(_appLocked, _privateLocked, privateMode, settings) { a, p, pm, s ->
+        s != null && ((a && s.lockApp) || (p && s.lockPrivate && pm))
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
     private val recorded = HashSet<String>()
     private var blockedUnflushed = 0
@@ -78,6 +113,8 @@ class BrowserViewModel(private val app: WyrixApp) : ViewModel() {
         sm.trackingProtectionOn = { settings.value?.protection != ProtectionLevel.OFF }
         sm.limitPopups = { settings.value?.limitPopups != false }
         sm.isTabSelected = { it == _tabs.value.selectedId }
+        sm.trackingFor = { desiredTracking(it, null) }
+        refreshSaved()
         viewModelScope.launch { sm.events.collect { onEvent(it) } }
         viewModelScope.launch {
             settings.filterNotNull().map { it.protection }.distinctUntilChanged().collect { c.engine.applyProtection(it) }
@@ -101,6 +138,9 @@ class BrowserViewModel(private val app: WyrixApp) : ViewModel() {
         if (st.selected == null) st = st.withTab(blankTab(false), true)
         _tabs.value = st
         syncSession()
+        val s0 = store.settings.first()
+        _appLocked.value = s0.lockApp
+        _privateLocked.value = s0.lockPrivate
         _ready.value = true
     }
 
@@ -119,6 +159,7 @@ class BrowserViewModel(private val app: WyrixApp) : ViewModel() {
             is TabEvent.Location -> if (t != null && !(t.error != null && e.url.startsWith("data:")) && !e.url.startsWith("data:")) {
                 update(e.tabId) { it.copy(url = e.url.ifBlank { it.url }) }
                 _sitePerms.update { it + (e.tabId to e.permissions) }
+                onLocationHost(e.tabId, e.url, e.permissions)
             }
             is TabEvent.Title -> {
                 update(e.tabId) { it.copy(title = e.title) }
@@ -126,6 +167,7 @@ class BrowserViewModel(private val app: WyrixApp) : ViewModel() {
             }
             is TabEvent.PageStart -> if (!e.url.startsWith("data:")) {
                 recorded.removeAll { it.startsWith(e.tabId) }
+                blockedSeen.remove(e.tabId); _blockedHosts.update { it - e.tabId }
                 update(e.tabId) { it.copy(loading = true, progress = 5, error = null, crashed = false, blocked = 0) }
             }
             is TabEvent.PageStop -> {
@@ -146,7 +188,16 @@ class BrowserViewModel(private val app: WyrixApp) : ViewModel() {
             is TabEvent.CloseRequest -> closeTab(e.tabId)
             is TabEvent.FullScreen -> _fullscreen.value = e.on && _tabs.value.selectedId == e.tabId
             is TabEvent.Crashed -> { sm.forget(e.tabId); update(e.tabId) { it.copy(crashed = true, loading = false) }; syncSession() }
-            is TabEvent.Blocked -> { update(e.tabId) { it.copy(blocked = it.blocked + 1) }; _blockedSession.update { it + 1 }; blockedUnflushed++ ; if (blockedUnflushed >= 25) flushBlocked() }
+            is TabEvent.Blocked -> {
+                // Count each tracker host once per page load, so the numbers mean "different trackers stopped", not raw requests.
+                val seen = blockedSeen.getOrPut(e.tabId) { LinkedHashSet() }
+                if (seen.size < 500 && seen.add(e.host ?: "unknown")) {
+                    update(e.tabId) { it.copy(blocked = seen.size) }
+                    _blockedHosts.update { m -> m + (e.tabId to seen.toList().takeLast(60)) }
+                    _blockedSession.update { it + 1 }; blockedUnflushed++
+                    if (blockedUnflushed >= 25) flushBlocked()
+                }
+            }
             is TabEvent.PopupOpened -> {
                 val opener = tab(e.openerId)
                 val nt = TabState(id = e.tabId, url = e.uri, isPrivate = e.isPrivate, workspaceId = opener?.workspaceId ?: workspaceId,
@@ -240,6 +291,8 @@ class BrowserViewModel(private val app: WyrixApp) : ViewModel() {
         val updated = t.copy(url = url, showHome = false, error = null, httpFallback = httpFallback, desktopMode = desktop,
             crashed = false, loading = true, progress = 5, lastAccessed = now())
         _tabs.update { it.withUpdate(id) { _ -> updated } }
+        UrlTools.hostOf(url)?.let { lastTrackingHost[id] = it }
+        applyTracking(id, reload = false)
         val ts = sm.navigate(updated, url)
         if (desktop != t.desktopMode) ts.setDesktopMode(desktop)
         if (_tabs.value.selectedId == id) syncSession()
@@ -275,6 +328,7 @@ class BrowserViewModel(private val app: WyrixApp) : ViewModel() {
         cancelRequestsFor(id)
         sm.remove(id)
         recorded.removeAll { it.startsWith(id) }
+        blockedSeen.remove(id); lastTrackingHost.remove(id); _blockedHosts.update { it - id }; _thumbs.update { it - id }
         var next = before.withClosed(id)
         if (next.selected == null) next = next.withTab(blankTab(false, closing.workspaceId), true)
         _tabs.value = next
@@ -289,7 +343,8 @@ class BrowserViewModel(private val app: WyrixApp) : ViewModel() {
         _tabs.value.inScope(isPrivate, workspaceId).filter { !it.pinned }.forEach { closeTab(it.id) }
     }
     fun closeAllPrivate() {
-        _tabs.value.tabs.filter { it.isPrivate }.forEach { cancelRequestsFor(it.id); sm.remove(it.id) }
+        _tabs.value.tabs.filter { it.isPrivate }.forEach { cancelRequestsFor(it.id); sm.remove(it.id); blockedSeen.remove(it.id); lastTrackingHost.remove(it.id) }
+        _thumbs.update { m -> m.filterKeys { k -> _tabs.value.tab(k)?.isPrivate != true } }
         var next = _tabs.value.withoutPrivate()
         if (next.selected == null) next = next.withTab(blankTab(false), true)
         _tabs.value = next; syncSession()
@@ -308,6 +363,28 @@ class BrowserViewModel(private val app: WyrixApp) : ViewModel() {
         _tabs.update { it.withReopened(newId, now()) }
         syncSession(); _screen.value = Screen.BROWSER
     }
+    fun reopenClosedAt(closedId: String) {
+        _tabs.update { it.withReopenedId(closedId, UUID.randomUUID().toString(), now()) }
+        syncSession(); _screen.value = Screen.BROWSER
+    }
+    fun clearRecentlyClosed() { _tabs.update { it.withoutRecentlyClosed() } }
+
+    /** Captures a small preview of the visible page for the tab switcher. Best effort; skipped if the engine is slow. */
+    suspend fun captureThumbnail(view: GeckoView) {
+        val t = _tabs.value.selected ?: return
+        if (t.showHome || !t.hasContent || t.error != null || t.crashed) return
+        val bmp = withTimeoutOrNull(600) { view.capturePixels().awaitOrNull() } ?: return
+        if (bmp.width <= 0 || bmp.height <= 0) return
+        val w = 360
+        val h = (bmp.height * (w / bmp.width.toFloat())).toInt().coerceIn(1, 900)
+        val scaled = runCatching { Bitmap.createScaledBitmap(bmp, w, h, true) }.getOrNull() ?: return
+        _thumbs.update { m ->
+            val next = LinkedHashMap(m); next.remove(t.id); next[t.id] = scaled
+            while (next.size > 24) next.remove(next.keys.first())
+            next
+        }
+    }
+
     fun togglePin(id: String) { val t = tab(id) ?: return; _tabs.update { it.withPinned(id, !t.pinned) } }
     fun moveTab(id: String, delta: Int) { _tabs.update { it.withMoved(id, delta) } }
 
@@ -393,12 +470,72 @@ class BrowserViewModel(private val app: WyrixApp) : ViewModel() {
     }
     fun toggleTrackingForTab() {
         val t = _tabs.value.selected ?: return
-        val off = !t.trackingOff
-        update(t.id) { it.copy(trackingOff = off) }
-        selectedSession()?.let { it.setTrackingProtection(!off && settings.value?.protection != ProtectionLevel.OFF); it.reload() }
+        update(t.id) { it.copy(trackingOff = !it.trackingOff) }
+        applyTracking(t.id, reload = true)
     }
-    suspend fun siteException(): Boolean = selectedSession()?.let { c.engine.isSiteException(it.session) } ?: false
-    fun setSiteException(on: Boolean) { selectedSession()?.let { c.engine.setSiteException(it.session, on); it.reload() } }
+    suspend fun siteException(): Boolean {
+        val host = UrlTools.hostOf(_tabs.value.selected?.url.orEmpty()) ?: return false
+        return host in (settings.value?.trackingExceptionHosts ?: emptySet())
+    }
+    /** Persistent per-site "allow trackers" switch, stored by us and applied to the session whenever that host loads. */
+    fun setSiteException(on: Boolean) {
+        val t = _tabs.value.selected ?: return
+        val host = UrlTools.hostOf(t.url) ?: return
+        viewModelScope.launch { store.setTrackingException(host, on) }
+        applyTracking(t.id, reload = true, exception = on)
+    }
+    private fun desiredTracking(t: TabState, exception: Boolean?): Boolean {
+        val s = settings.value ?: return true
+        val host = UrlTools.hostOf(t.url)
+        val excepted = exception ?: (host != null && host in s.trackingExceptionHosts)
+        return !t.trackingOff && s.protection != ProtectionLevel.OFF && !excepted
+    }
+    private fun applyTracking(tabId: String, reload: Boolean, exception: Boolean? = null) {
+        val t = tab(tabId) ?: return
+        val ts = sm.peek(tabId) ?: return
+        val want = desiredTracking(t, exception)
+        if (ts.session.settings.useTrackingProtection != want) {
+            ts.setTrackingProtection(want)
+            if (reload) ts.reload()
+        }
+    }
+    /** Called on every location change: per-host protection and permission bookkeeping. */
+    private fun onLocationHost(tabId: String, url: String, perms: List<SitePermissionInfo>) {
+        val host = UrlTools.hostOf(url) ?: return
+        val t = tab(tabId)
+        val s = settings.value
+        if (s != null && host in s.sitePermResetHosts && perms.isNotEmpty()) {
+            perms.forEach { c.engine.resetPermission(it.raw) }
+            permCache[host] = emptyList()
+            _sitePerms.update { it + (tabId to emptyList()) }
+            viewModelScope.launch { store.setPermissionResetPending(host, false); store.replaceSitePermissions(host, emptySet()) }
+        } else if (t?.isPrivate != true) {
+            permCache[host] = perms
+            val entries = perms.filter { it.state != "Ask" }.map { "$host|${it.kind}|${it.state}" }.toSet()
+            val known = s?.sitePermissions.orEmpty().filter { it.substringBefore('|') == host }.toSet()
+            if (entries != known) viewModelScope.launch { store.replaceSitePermissions(host, entries) }
+        }
+        if (t != null && lastTrackingHost[tabId] != host) { lastTrackingHost[tabId] = host; applyTracking(tabId, reload = true) }
+    }
+    fun removeTrackingException(host: String) {
+        viewModelScope.launch { store.setTrackingException(host, false) }
+        _tabs.value.tabs.filter { UrlTools.hostOf(it.url) == host }.forEach { applyTracking(it.id, reload = false, exception = false) }
+    }
+    /** Resets every stored permission for [host]; if the engine objects aren't available this session, applied on next visit. */
+    fun resetSitePermissions(host: String) {
+        viewModelScope.launch {
+            val cached = permCache[host].orEmpty()
+            if (cached.isNotEmpty()) {
+                cached.forEach { c.engine.resetPermission(it.raw) }
+                permCache[host] = emptyList()
+                store.replaceSitePermissions(host, emptySet()); store.setPermissionResetPending(host, false)
+                toast("Permissions reset for $host")
+            } else {
+                store.setPermissionResetPending(host, true)
+                toast("Will reset the next time you open $host")
+            }
+        }
+    }
     fun resetPermission(p: SitePermissionInfo) {
         c.engine.resetPermission(p.raw)
         _tabs.value.selectedId?.let { id -> _sitePerms.update { m -> m + (id to m[id].orEmpty().filter { it !== p }) } }
@@ -479,7 +616,13 @@ class BrowserViewModel(private val app: WyrixApp) : ViewModel() {
 
     // ---- screens / settings ------------------------------------------------------------------
     fun openScreen(s: Screen) { _screen.value = s }
-    fun closeScreen() { _screen.value = if (_screen.value == Screen.ABOUT) Screen.SETTINGS else Screen.BROWSER }
+    fun closeScreen() {
+        _screen.value = when (_screen.value) {
+            Screen.ABOUT -> Screen.SETTINGS
+            Screen.READER -> if (readerFromSaved) Screen.SAVED else Screen.BROWSER
+            else -> Screen.BROWSER
+        }
+    }
     fun <T> setPref(key: Preferences.Key<T>, value: T) { viewModelScope.launch { store.set(key, value) } }
     fun resetAppearance() { viewModelScope.launch { store.remove(*Keys.APPEARANCE.toTypedArray()) } }
     fun finishOnboarding() { setPref(Keys.ONBOARDING, true) }
@@ -499,6 +642,75 @@ class BrowserViewModel(private val app: WyrixApp) : ViewModel() {
             }
         }
     }
+
+    // ---- reader mode -------------------------------------------------------------------------
+    fun openReader() {
+        val t = _tabs.value.selected ?: return
+        if (t.showHome || !UrlTools.isWebUrl(t.url)) { toast("Open a web page first"); return }
+        readerFromSaved = false
+        _reader.value = ReaderState.Loading
+        _screen.value = Screen.READER
+        val url = t.url; val priv = t.isPrivate
+        viewModelScope.launch {
+            _reader.value = when (val r = withContext(Dispatchers.IO) { ReaderFetcher.fetch(url) }) {
+                is ReaderFetcher.Result.Failed -> ReaderState.Failed(r.message)
+                is ReaderFetcher.Result.Ok -> {
+                    val a = withContext(Dispatchers.Default) { ReaderExtractor.extract(r.html, url) }
+                    if (a == null) ReaderState.Failed("This page doesn't look like a plain article, or it needs JavaScript to show its text.")
+                    else ReaderState.Ready(a, c.reader.isSaved(url), priv)
+                }
+            }
+        }
+    }
+    fun openSavedArticle(id: String) {
+        viewModelScope.launch {
+            val a = c.reader.load(id)
+            if (a == null) { toast("Couldn't open that article"); return@launch }
+            readerFromSaved = true
+            _reader.value = ReaderState.Ready(a, true, false)
+            _screen.value = Screen.READER
+        }
+    }
+    fun toggleSaveArticle() {
+        val st = _reader.value as? ReaderState.Ready ?: return
+        if (st.fromPrivate) { toast("Articles from private tabs can't be saved"); return }
+        viewModelScope.launch {
+            if (st.saved) {
+                c.reader.delete(c.reader.idFor(st.article.url)); _reader.value = st.copy(saved = false); toast("Removed from saved articles")
+            } else if (c.reader.save(st.article)) {
+                _reader.value = st.copy(saved = true); toast("Saved for offline reading")
+            } else toast("Saved articles are full (${ReaderStore.MAX_ARTICLES}); delete some first")
+            refreshSaved()
+        }
+    }
+    fun deleteSaved(id: String) { viewModelScope.launch { c.reader.delete(id); refreshSaved() } }
+    fun refreshSaved() { viewModelScope.launch { _saved.value = c.reader.list() } }
+    fun openSavedList() { refreshSaved(); _screen.value = Screen.SAVED }
+    fun openOriginalFromReader() {
+        val st = _reader.value as? ReaderState.Ready ?: return
+        loadUrl(st.article.url); _screen.value = Screen.BROWSER
+    }
+
+    // ---- translation (web service; see TranslateLanguages) -----------------------------------
+    fun translateCurrent(lang: String) {
+        val t = _tabs.value.selected ?: return
+        val url = TranslateLanguages.buildUrl(t.url, lang)
+        if (url == null) { toast("This page can't be translated"); return }
+        setPref(Keys.TRANSLATE_LANG, lang)
+        loadUrl(url)
+    }
+
+    // ---- biometric lock ----------------------------------------------------------------------
+    fun onBackgrounded() { backgroundedAt = now() }
+    fun onForegrounded() {
+        val s = settings.value ?: return
+        if (backgroundedAt == 0L) return
+        if (now() - backgroundedAt >= s.lockTimeoutSec * 1000L) {
+            if (s.lockApp) _appLocked.value = true
+            if (s.lockPrivate) _privateLocked.value = true
+        }
+    }
+    fun unlock() { _appLocked.value = false; _privateLocked.value = false }
 
     // ---- lifecycle ---------------------------------------------------------------------------
     private fun flushBlocked() { val n = blockedUnflushed; blockedUnflushed = 0; if (n > 0) viewModelScope.launch { store.addBlocked(n.toLong()) } }

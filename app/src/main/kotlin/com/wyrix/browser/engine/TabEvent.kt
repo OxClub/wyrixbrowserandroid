@@ -46,7 +46,7 @@ sealed interface TabEvent {
     data class CloseRequest(override val tabId: String) : TabEvent
     data class FullScreen(override val tabId: String, val on: Boolean) : TabEvent
     data class Crashed(override val tabId: String) : TabEvent
-    data class Blocked(override val tabId: String) : TabEvent
+    data class Blocked(override val tabId: String, val host: String?) : TabEvent
     data class PopupOpened(override val tabId: String, val openerId: String, val isPrivate: Boolean, val uri: String) : TabEvent
     data class ContextMenu(override val tabId: String, val linkUri: String?, val imageUri: String?) : TabEvent
     data class Download(

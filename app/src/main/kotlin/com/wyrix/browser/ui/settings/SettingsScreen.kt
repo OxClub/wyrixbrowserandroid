@@ -22,6 +22,9 @@ import com.wyrix.browser.core.SearchEngines
 import com.wyrix.browser.data.*
 import com.wyrix.browser.ui.common.*
 import com.wyrix.browser.ui.library.ClearDialog
+import com.wyrix.browser.security.BiometricGate
+import androidx.compose.foundation.lazy.items
+import androidx.compose.ui.text.font.FontWeight
 
 @Composable
 fun SettingsScreen(vm: BrowserViewModel) {
@@ -34,6 +37,20 @@ fun SettingsScreen(vm: BrowserViewModel) {
     val importer = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { u -> if (u != null) vm.importBookmarks(ctx, u) }
     val exporter = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/html")) { u -> if (u != null) vm.exportBookmarks(ctx, u) }
     val roleLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { }
+
+    /** Turning a lock on requires a successful unlock first, so it can't be enabled by accident or without working credentials. */
+    fun setLock(key: androidx.datastore.preferences.core.Preferences.Key<Boolean>, on: Boolean) {
+        if (!on) { vm.setPref(key, false); return }
+        when (BiometricGate.availability(ctx)) {
+            BiometricGate.Availability.AVAILABLE -> {
+                val a = ctx as? android.app.Activity
+                if (a == null) vm.toast("Can't show the unlock prompt here")
+                else BiometricGate.authenticate(a, "Turn on lock", "Confirm it's you") { ok -> if (ok) vm.setPref(key, true) else vm.toast("Lock not turned on") }
+            }
+            BiometricGate.Availability.NOT_ENROLLED -> vm.toast("Set up a fingerprint, face or screen lock in Android Settings first")
+            BiometricGate.Availability.UNAVAILABLE -> vm.toast("This device can't use biometric or screen-lock authentication")
+        }
+    }
 
     fun row(title: String, value: String, key: String) = @Composable {
         ListItem(headlineContent = { Text(title) }, supportingContent = { Text(value) }, modifier = Modifier.clickable { dialog = key }, colors = ListItemDefaults.colors(containerColor = Color.Transparent))
@@ -66,6 +83,23 @@ fun SettingsScreen(vm: BrowserViewModel) {
             item { SettingSwitch("Hide private tabs from screenshots and recents", null, st.secureWindowInPrivate) { vm.setPref(Keys.SECURE_WINDOW, it) } }
             item { SettingSwitch("Limit pop-ups", "Allow at most a few new windows per minute, only from the visible tab", st.limitPopups) { vm.setPref(Keys.LIMIT_POPUPS, it) } }
             item { SettingSwitch("Open links from other apps in a new tab", null, st.openLinksInNewTab) { vm.setPref(Keys.NEW_TAB_LINKS, it) } }
+            item { SectionHeader("App lock") }
+            item { SettingSwitch("Lock WYRIX", "Ask for fingerprint, face or screen lock when you return to the app. Also hides it in recent apps.", st.lockApp) { setLock(Keys.LOCK_APP, it) } }
+            item { SettingSwitch("Lock private tabs", "Ask before private tabs are shown", st.lockPrivate) { setLock(Keys.LOCK_PRIVATE, it) } }
+            item {
+                val label = when (st.lockTimeoutSec) { 0 -> "Immediately"; 30 -> "After 30 seconds"; 60 -> "After 1 minute"; 300 -> "After 5 minutes"; else -> "After ${st.lockTimeoutSec} seconds" }
+                row("Lock after leaving the app", label, "lockTimeout")()
+            }
+            item { SectionHeader("Site permissions and protection") }
+            item {
+                val hosts = st.sitePermissions.map { it.substringBefore('|') }.toSet().size
+                ListItem(headlineContent = { Text("Site permissions") }, supportingContent = { Text(if (hosts == 0) "No sites have saved permissions" else "$hosts sites") },
+                    modifier = Modifier.clickable { dialog = "sitePerms" }, colors = ListItemDefaults.colors(containerColor = Color.Transparent))
+            }
+            item {
+                ListItem(headlineContent = { Text("Sites with tracking protection off") }, supportingContent = { Text(if (st.trackingExceptionHosts.isEmpty()) "None" else "${st.trackingExceptionHosts.size} sites") },
+                    modifier = Modifier.clickable { dialog = "trackingExceptions" }, colors = ListItemDefaults.colors(containerColor = Color.Transparent))
+            }
             item { SectionHeader("Clear data") }
             item { ListItem(headlineContent = { Text("Clear history…") }, modifier = Modifier.clickable { dialog = "clearHistory" }, colors = ListItemDefaults.colors(containerColor = Color.Transparent)) }
             item { ListItem(headlineContent = { Text("Clear cookies and site data") }, modifier = Modifier.clickable { confirm = "cookies" }, colors = ListItemDefaults.colors(containerColor = Color.Transparent)) }
@@ -97,6 +131,20 @@ fun SettingsScreen(vm: BrowserViewModel) {
         "toolbar" -> ChoiceDialog("Toolbar position", ToolbarPosition.entries.map { it to it.name.lowercase().replaceFirstChar { c -> c.uppercase() } }, st.toolbarPosition, { vm.setPref(Keys.TOOLBAR, it.name) }) { dialog = null }
         "home" -> ChoiceDialog("Home layout", HomeLayout.entries.map { it to it.name.lowercase().replaceFirstChar { c -> c.uppercase() } }, st.homeLayout, { vm.setPref(Keys.HOME_LAYOUT, it.name) }) { dialog = null }
         "clearHistory" -> ClearDialog({ dialog = null }) { since -> vm.clearHistory(since); dialog = null }
+        "lockTimeout" -> ChoiceDialog("Lock after leaving the app", listOf(0 to "Immediately", 30 to "After 30 seconds", 60 to "After 1 minute", 300 to "After 5 minutes"), st.lockTimeoutSec, { vm.setPref(Keys.LOCK_TIMEOUT, it) }) { dialog = null }
+        "sitePerms" -> SitePermissionsDialog(st, vm) { dialog = null }
+        "trackingExceptions" -> AlertDialog(
+            onDismissRequest = { dialog = null }, title = { Text("Tracking protection off") },
+            text = {
+                androidx.compose.foundation.lazy.LazyColumn(Modifier.heightIn(max = 320.dp)) {
+                    items(st.trackingExceptionHosts.sorted(), key = { it }) { h ->
+                        ListItem(headlineContent = { Text(h) }, trailingContent = { TextButton(onClick = { vm.removeTrackingException(h) }) { Text("Turn on") } }, colors = ListItemDefaults.colors(containerColor = Color.Transparent))
+                    }
+                    if (st.trackingExceptionHosts.isEmpty()) item { Text("No sites. Use the lock icon in the address bar on a page to relax protection for just that site.") }
+                }
+            },
+            confirmButton = { TextButton(onClick = { dialog = null }) { Text("Close") } },
+        )
     }
     if (customSearch) {
         var t by remember { mutableStateOf(st.customSearchTemplate.ifBlank { "https://example.com/search?q=%s" }) }
@@ -110,4 +158,27 @@ fun SettingsScreen(vm: BrowserViewModel) {
         "cookies" -> ConfirmDialog("Clear cookies and site data?", "You'll be signed out of most sites.", "Clear", { vm.clearCookies(); confirm = null }, { confirm = null })
         "cache" -> ConfirmDialog("Clear cache?", "Pages may load slower once.", "Clear", { vm.clearCache(); confirm = null }, { confirm = null })
     }
+}
+
+@Composable
+private fun SitePermissionsDialog(st: Settings, vm: BrowserViewModel, onDismiss: () -> Unit) {
+    val byHost = st.sitePermissions.mapNotNull { e -> e.split('|').takeIf { it.size == 3 } }.groupBy({ it[0] }, { it[1] + ": " + it[2] }).toSortedMap()
+    AlertDialog(
+        onDismissRequest = onDismiss, title = { Text("Site permissions") },
+        text = {
+            androidx.compose.foundation.lazy.LazyColumn(Modifier.heightIn(max = 360.dp)) {
+                items(byHost.entries.toList(), key = { it.key }) { (host, perms) ->
+                    val pending = host in st.sitePermResetHosts
+                    ListItem(
+                        headlineContent = { Text(host, fontWeight = FontWeight.SemiBold) },
+                        supportingContent = { Text(perms.joinToString(", ") + if (pending) "\nWill reset next time you open this site" else "") },
+                        trailingContent = { if (!pending) TextButton(onClick = { vm.resetSitePermissions(host) }) { Text("Reset") } },
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                    )
+                }
+                if (byHost.isEmpty()) item { Text("Sites you allow or block (location, autoplay, storage…) are listed here after you visit them.") }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } },
+    )
 }

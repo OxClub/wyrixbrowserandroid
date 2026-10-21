@@ -6,6 +6,9 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items as listItems
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -33,6 +36,10 @@ import com.wyrix.browser.data.TabLayoutMode
 import com.wyrix.browser.data.WorkspaceEntity
 import com.wyrix.browser.tabs.TabState
 import com.wyrix.browser.ui.common.*
+import com.wyrix.browser.ui.theme.LocalMotion
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import android.graphics.Bitmap
 
 private sealed interface Row2 {
     data class Header(val group: TabGroupEntity, val count: Int) : Row2
@@ -47,6 +54,9 @@ fun TabSwitcher(vm: BrowserViewModel) {
     val groups by vm.groups.collectAsStateWithLifecycle()
     val workspaces by vm.workspaces.collectAsStateWithLifecycle()
     val privateMode by vm.privateMode.collectAsStateWithLifecycle()
+    val thumbs by vm.thumbnails.collectAsStateWithLifecycle()
+    var closedSheet by remember { mutableStateOf(false) }
+    val motion = LocalMotion.current
     val s = settings ?: return
     var query by remember { mutableStateOf("") }
     var galaxy by remember { mutableStateOf(false) }
@@ -79,7 +89,7 @@ fun TabSwitcher(vm: BrowserViewModel) {
                 FilterChip(selected = privateMode, onClick = { vm.switchMode(true) }, label = { Text("Private") })
                 Spacer(Modifier.weight(1f))
                 IconButton(onClick = { galaxy = !galaxy }) { Icon(Icons.Filled.Favorite, if (galaxy) "Show tab grid" else "Show Tab Galaxy") }
-                IconButton(onClick = { vm.reopenClosed() }, enabled = state.recentlyClosed.isNotEmpty()) { Icon(Icons.Filled.Refresh, "Reopen closed tab") }
+                IconButton(onClick = { closedSheet = true }, enabled = state.recentlyClosed.isNotEmpty()) { Icon(WyrixIcons.Reopen, "Recently closed tabs") }
                 IconButton(onClick = { vm.newTab(privateMode) }) { Icon(Icons.Filled.Add, "New tab") }
             }
             OutlinedTextField(query, { query = it.take(100) }, singleLine = true, placeholder = { Text("Search tabs") },
@@ -108,15 +118,38 @@ fun TabSwitcher(vm: BrowserViewModel) {
                 modifier = Modifier.weight(1f),
             ) {
                 items(rows, key = { r -> when (r) { is Row2.Header -> "g" + r.group.id; is Row2.Item -> r.tab.id } }, span = { r -> if (r is Row2.Header) GridItemSpan(maxLineSpan) else GridItemSpan(1) }) { r ->
+                    val anim = if (motion.reduced) Modifier else Modifier.animateItem()
                     when (r) {
-                        is Row2.Header -> GroupHeader(r.group, r.count, vm, onRename = { renameGroup = r.group })
-                        is Row2.Item -> TabCard(r.tab, r.tab.id == state.selectedId, s.tabLayout, groupMap[r.tab.groupId], vm, onGroup = { groupTarget = r.tab })
+                        is Row2.Header -> Box(anim) { GroupHeader(r.group, r.count, vm, onRename = { renameGroup = r.group }) }
+                        is Row2.Item -> TabCard(r.tab, r.tab.id == state.selectedId, s.tabLayout, groupMap[r.tab.groupId], thumbs[r.tab.id], vm, onGroup = { groupTarget = r.tab }, modifier = anim)
                     }
                 }
             }
         }
     }
 
+    if (closedSheet) {
+        ModalBottomSheet(onDismissRequest = { closedSheet = false }) {
+            Column(Modifier.padding(bottom = 24.dp)) {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("Recently closed", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                    TextButton(onClick = { vm.clearRecentlyClosed(); closedSheet = false }) { Text("Clear list") }
+                }
+                if (state.recentlyClosed.isEmpty()) Text("Nothing closed recently.", Modifier.padding(16.dp))
+                LazyColumn(Modifier.heightIn(max = 420.dp)) {
+                    listItems(state.recentlyClosed, key = { it.id }) { t ->
+                        ListItem(
+                            headlineContent = { Text(t.title.ifBlank { UrlTools.hostOf(t.url) ?: t.url }, maxLines = 1) },
+                            supportingContent = { Text(UrlTools.hostOf(t.url).orEmpty(), maxLines = 1) },
+                            leadingContent = { SiteTile(UrlTools.hostOf(t.url), 36.dp) },
+                            modifier = Modifier.clickable { vm.reopenClosedAt(t.id); closedSheet = false },
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                        )
+                    }
+                }
+            }
+        }
+    }
     if (addWorkspace) TextInputDialog("New space", label = "Name", onConfirm = { vm.addWorkspace(it, PaletteColors.random()); addWorkspace = false }, onDismiss = { addWorkspace = false })
     wsMenu?.let { w ->
         var rename by remember { mutableStateOf(false) }
@@ -150,39 +183,75 @@ private fun GroupHeader(g: TabGroupEntity, count: Int, vm: BrowserViewModel, onR
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
+@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
-private fun TabCard(tab: TabState, selected: Boolean, layout: TabLayoutMode, group: TabGroupEntity?, vm: BrowserViewModel, onGroup: () -> Unit) {
+private fun TabCard(tab: TabState, selected: Boolean, layout: TabLayoutMode, group: TabGroupEntity?, thumb: Bitmap?, vm: BrowserViewModel, onGroup: () -> Unit, modifier: Modifier = Modifier) {
     var menu by remember { mutableStateOf(false) }
     val host = UrlTools.hostOf(tab.url)
-    val border = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
+    val borderColor = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
     val compact = layout == TabLayoutMode.COMPACT
-    Surface(
-        shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surface,
-        modifier = Modifier.fillMaxWidth().border(if (selected) 2.dp else 1.dp, border, RoundedCornerShape(16.dp))
-            .combinedClickable(onClick = { vm.selectTab(tab.id) }, onLongClick = { menu = true }, onLongClickLabel = "Tab options")
-            .semantics { contentDescription = "${tab.title.ifBlank { host ?: "New tab" }}${if (tab.pinned) ", pinned" else ""}${if (selected) ", current tab" else ""}" },
+    val grid = layout == TabLayoutMode.GRID
+    val shape = RoundedCornerShape(16.dp)
+    val label = tab.title.ifBlank { host ?: "New tab" }
+    val dismissState = rememberSwipeToDismissBoxState(confirmValueChange = { v ->
+        if (v != SwipeToDismissBoxValue.Settled && !tab.pinned) { vm.closeTab(tab.id); true } else false
+    })
+    SwipeToDismissBox(
+        state = dismissState, modifier = modifier,
+        enableDismissFromStartToEnd = !tab.pinned, enableDismissFromEndToStart = !tab.pinned,
+        backgroundContent = {
+            Box(Modifier.fillMaxSize().clip(shape).background(MaterialTheme.colorScheme.error.copy(alpha = 0.25f)), contentAlignment = Alignment.Center) { Icon(Icons.Filled.Close, "Swipe to close tab") }
+        },
     ) {
-        Row(Modifier.padding(if (compact) 6.dp else 12.dp), verticalAlignment = Alignment.CenterVertically) {
-            SiteTile(host, if (compact) 28.dp else 40.dp, group?.let { Color(it.color) })
-            Spacer(Modifier.width(10.dp))
-            Column(Modifier.weight(1f)) {
-                Text(tab.title.ifBlank { host ?: "New tab" }, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium)
-                if (!compact) Text(host ?: "Home", maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            if (tab.pinned) Icon(Icons.Filled.Star, "Pinned", Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
-            Box {
-                IconButton(onClick = { menu = true }, modifier = Modifier.size(36.dp)) { Icon(Icons.Filled.MoreVert, "Tab options") }
-                DropdownMenu(menu, { menu = false }) {
-                    DropdownMenuItem({ Text(if (tab.pinned) "Unpin" else "Pin") }, { menu = false; vm.togglePin(tab.id) })
-                    DropdownMenuItem({ Text("Duplicate") }, { menu = false; vm.duplicateTab(tab.id) })
-                    if (!tab.isPrivate) DropdownMenuItem({ Text("Group…") }, { menu = false; onGroup() })
-                    DropdownMenuItem({ Text("Move earlier") }, { menu = false; vm.moveTab(tab.id, -1) })
-                    DropdownMenuItem({ Text("Move later") }, { menu = false; vm.moveTab(tab.id, 1) })
-                    DropdownMenuItem({ Text("Close other tabs") }, { menu = false; vm.closeOthers(tab.id) })
+        Surface(
+            shape = shape, color = MaterialTheme.colorScheme.surface,
+            modifier = Modifier.fillMaxWidth().border(if (selected) 2.dp else 1.dp, borderColor, shape)
+                .combinedClickable(onClick = { vm.selectTab(tab.id) }, onLongClick = { menu = true }, onLongClickLabel = "Tab options")
+                .semantics { contentDescription = "$label${if (tab.pinned) ", pinned" else ""}${if (selected) ", current tab" else ""}" },
+        ) {
+            @Composable fun preview(mod: Modifier) {
+                Box(mod.clip(RoundedCornerShape(10.dp)).background(MaterialTheme.colorScheme.surfaceVariant), contentAlignment = Alignment.Center) {
+                    if (thumb != null) Image(thumb.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop, alignment = Alignment.TopCenter)
+                    else SiteTile(host, if (grid) 44.dp else 28.dp, group?.let { Color(it.color) })
                 }
             }
-            IconButton(onClick = { vm.closeTab(tab.id) }, modifier = Modifier.size(36.dp)) { Icon(Icons.Filled.Close, "Close tab ${tab.title.ifBlank { host ?: "" }}") }
+            @Composable fun actions() {
+                if (tab.pinned) Icon(Icons.Filled.Star, "Pinned", Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
+                Box {
+                    IconButton(onClick = { menu = true }, modifier = Modifier.size(36.dp)) { Icon(Icons.Filled.MoreVert, "Tab options") }
+                    DropdownMenu(menu, { menu = false }) {
+                        DropdownMenuItem({ Text(if (tab.pinned) "Unpin" else "Pin") }, { menu = false; vm.togglePin(tab.id) })
+                        DropdownMenuItem({ Text("Duplicate") }, { menu = false; vm.duplicateTab(tab.id) })
+                        if (!tab.isPrivate) DropdownMenuItem({ Text("Group…") }, { menu = false; onGroup() })
+                        DropdownMenuItem({ Text("Move earlier") }, { menu = false; vm.moveTab(tab.id, -1) })
+                        DropdownMenuItem({ Text("Move later") }, { menu = false; vm.moveTab(tab.id, 1) })
+                        DropdownMenuItem({ Text("Close other tabs") }, { menu = false; vm.closeOthers(tab.id) })
+                    }
+                }
+                IconButton(onClick = { vm.closeTab(tab.id) }, modifier = Modifier.size(36.dp)) { Icon(Icons.Filled.Close, "Close tab $label") }
+            }
+            if (grid) {
+                Column(Modifier.padding(8.dp)) {
+                    preview(Modifier.fillMaxWidth().aspectRatio(1.5f))
+                    Row(Modifier.padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f).padding(start = 4.dp)) {
+                            Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium)
+                            Text(host ?: "Home", maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        actions()
+                    }
+                }
+            } else {
+                Row(Modifier.padding(if (compact) 6.dp else 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    preview(Modifier.size(width = if (compact) 44.dp else 72.dp, height = if (compact) 32.dp else 48.dp))
+                    Spacer(Modifier.width(10.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium)
+                        if (!compact) Text(host ?: "Home", maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    actions()
+                }
+            }
         }
     }
 }

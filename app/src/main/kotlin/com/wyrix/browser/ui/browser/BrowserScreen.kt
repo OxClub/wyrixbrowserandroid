@@ -30,6 +30,16 @@ import com.wyrix.browser.ui.settings.AboutScreen
 import com.wyrix.browser.ui.settings.SettingsScreen
 import com.wyrix.browser.ui.tabs.TabSwitcher
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.clickable
+import com.wyrix.browser.data.Keys
+import com.wyrix.browser.ui.common.WyrixIcons
+import com.wyrix.browser.ui.reader.ReaderScreen
+import com.wyrix.browser.ui.reader.SavedArticlesScreen
+import com.wyrix.browser.ui.security.LockOverlay
+import org.mozilla.geckoview.GeckoView
 
 @Composable
 fun BrowserScreen(vm: BrowserViewModel) {
@@ -43,6 +53,10 @@ fun BrowserScreen(vm: BrowserViewModel) {
     val ctxMenu by vm.contextMenu.collectAsStateWithLifecycle()
     val s = settings ?: return
     val tab = tabsState.selected
+    val locked by vm.locked.collectAsStateWithLifecycle()
+    val scope = rememberCoroutineScope()
+    var geckoView by remember { mutableStateOf<GeckoView?>(null) }
+    var translateDialog by remember { mutableStateOf(false) }
 
     // Android runtime permission bridge for camera/mic/location requested by pages.
     var pendingPerm by remember { mutableStateOf<((Boolean) -> Unit)?>(null) }
@@ -89,11 +103,19 @@ fun BrowserScreen(vm: BrowserViewModel) {
                 onSubmit = { submit(field.text) }, onSiteInfo = { showSiteInfo = true },
                 onReloadOrStop = { if (tab?.loading == true) vm.stop() else vm.reload() }, bookmarked = bookmarked,
                 onToggleBookmark = { vm.toggleBookmark(); bookmarked = !bookmarked },
+                onCopy = { tab?.let { copyText(ctx, it.url); vm.toast("Link copied") } },
+                onShare = { tab?.let { shareText(ctx, it.url) } },
+                onPasteGo = { val t = readClipboard(ctx); if (t == null) vm.toast("Nothing to paste") else submit(t) },
+                onReloadHard = { vm.hardReload() },
             )
             ActionRow(tab, tabsState.inScope(privateMode, s.currentWorkspaceId).size, privateMode,
+                canReopen = tabsState.recentlyClosed.isNotEmpty(),
                 onBack = { vm.handleBack() }, onForward = { vm.goForward() }, onHome = { editing = false; vm.goHome() },
-                onTabs = { editing = false; vm.openScreen(Screen.TABS) },
-                onMenu = { BrowserMenu(vm, tab, privateMode, onShare = { shareText(ctx, it) }) })
+                onTabs = { editing = false; scope.launch { geckoView?.let { vm.captureThumbnail(it) }; vm.openScreen(Screen.TABS) } },
+                onMenu = { BrowserMenu(vm, tab, privateMode, onShare = { shareText(ctx, it) }, onTranslate = { translateDialog = true }) },
+                onBackLong = { vm.openScreen(Screen.HISTORY) }, onHomeLong = { vm.newTab(privateMode) },
+                onNewTab = { vm.newTab(false) }, onNewPrivateTab = { vm.newTab(true) },
+                onCloseTab = { tab?.let { vm.closeTab(it.id) } }, onReopen = { vm.reopenClosed() })
         }
     }
 
@@ -101,7 +123,7 @@ fun BrowserScreen(vm: BrowserViewModel) {
         Column(Modifier.fillMaxSize().then(if (fullscreen) Modifier else Modifier.windowInsetsPadding(WindowInsets.systemBars.union(WindowInsets.displayCutout)).imePadding())) {
             if (!fullscreen && top) chrome()
             Box(Modifier.weight(1f).fillMaxWidth()) {
-                GeckoViewHost(session, vm.runtime, Modifier.fillMaxSize())
+                GeckoViewHost(if (locked) null else session, vm.runtime, Modifier.fillMaxSize(), onView = { geckoView = it })
                 if (tab != null && (tab.showHome || tab.url.isBlank())) HomeScreen(vm, onStartEdit = { startEdit() })
                 if (tab != null && (tab.error != null || tab.crashed) && !tab.showHome) ErrorOverlay(tab, vm)
                 if (editing) {
@@ -113,9 +135,23 @@ fun BrowserScreen(vm: BrowserViewModel) {
                         if (remote.isNotEmpty()) sugg = (sugg + remote).distinctBy { it.action }
                     }
                     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                        SuggestionList(sugg, field.text.trim(), SearchEngines.byId(s.searchEngineId)?.name ?: "Custom search",
-                            onPick = { sg -> editing = false; if (sg.tabId != null) vm.selectTab(sg.tabId) else submit(sg.action) },
-                            onSearch = { submit(field.text) })
+                        Column(Modifier.fillMaxSize()) {
+                            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                                Text("Search with", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                SearchEngines.all.forEach { e ->
+                                    FilterChip(selected = s.searchEngineId == e.id, onClick = { vm.setPref(Keys.SEARCH_ENGINE, e.id) }, label = { Text(e.name) })
+                                }
+                            }
+                            if (field.text.isBlank()) {
+                                // The clipboard is only read when the user taps this row (never automatically).
+                                ListItem(headlineContent = { Text("Paste and go") }, supportingContent = { Text("Open what you copied") },
+                                    leadingContent = { Icon(WyrixIcons.Copy, null) },
+                                    modifier = Modifier.clickable { val t = readClipboard(ctx); if (t == null) vm.toast("Nothing to paste") else submit(t) })
+                            }
+                            SuggestionList(sugg, field.text.trim(), SearchEngines.byId(s.searchEngineId)?.name ?: "Custom search",
+                                onPick = { sg -> editing = false; if (sg.tabId != null) vm.selectTab(sg.tabId) else submit(sg.action) },
+                                onSearch = { submit(field.text) }, modifier = Modifier.weight(1f).fillMaxWidth())
+                        }
                     }
                 }
             }
@@ -130,16 +166,25 @@ fun BrowserScreen(vm: BrowserViewModel) {
             Screen.DOWNLOADS -> DownloadsScreen(vm)
             Screen.SETTINGS -> SettingsScreen(vm)
             Screen.ABOUT -> AboutScreen(vm)
+            Screen.READER -> ReaderScreen(vm)
+            Screen.SAVED -> SavedArticlesScreen(vm)
             Screen.BROWSER -> {}
         }
-        PromptHost(vm)
-        ctxMenu?.let { ContextSheet(it, vm) { link -> shareText(ctx, link) } }
-        if (showSiteInfo && tab != null) SiteInfoSheet(tab, vm) { showSiteInfo = false }
+        if (!locked) {
+            PromptHost(vm)
+            ctxMenu?.let { ContextSheet(it, vm) { link -> shareText(ctx, link) } }
+            if (showSiteInfo && tab != null) SiteInfoSheet(tab, vm) { showSiteInfo = false }
+            if (translateDialog && tab != null) TranslateDialog(tab, s.translateLang, vm) { translateDialog = false }
+        }
+        if (locked) {
+            BackHandler { (ctx as? android.app.Activity)?.moveTaskToBack(true) }
+            LockOverlay(privateOnly = !s.lockApp, onUnlocked = { vm.unlock() })
+        }
     }
 }
 
 @Composable
-private fun BrowserMenu(vm: BrowserViewModel, tab: com.wyrix.browser.tabs.TabState?, privateMode: Boolean, onShare: (String) -> Unit) {
+private fun BrowserMenu(vm: BrowserViewModel, tab: com.wyrix.browser.tabs.TabState?, privateMode: Boolean, onShare: (String) -> Unit, onTranslate: () -> Unit) {
     val ctx = LocalContext.current
     var open by remember { mutableStateOf(false) }
     IconButton(onClick = { open = true }) { Icon(Icons.Filled.MoreVert, "More options") }
@@ -154,6 +199,9 @@ private fun BrowserMenu(vm: BrowserViewModel, tab: com.wyrix.browser.tabs.TabSta
         Item("Copy link", hasPage) { tab?.let { copyText(ctx, it.url); vm.toast("Link copied") } }
         Item("Desktop site", hasPage) { vm.toggleDesktop() }
         Item("Reload without cache", hasPage) { vm.hardReload() }
+        Item("Reader mode", hasPage && tab?.url?.startsWith("https://") == true) { vm.openReader() }
+        Item("Translate page…", hasPage) { onTranslate() }
+        Item("Saved articles") { vm.openSavedList() }
         Item("Add to home shortcuts", hasPage) { vm.addCurrentAsShortcut() }
         HorizontalDivider()
         Item("Bookmarks") { vm.openScreen(Screen.BOOKMARKS) }

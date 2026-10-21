@@ -2,7 +2,9 @@ package com.wyrix.browser.ui.browser
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -34,14 +36,19 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import com.wyrix.browser.core.UrlTools
 import com.wyrix.browser.tabs.TabState
+import com.wyrix.browser.ui.common.WyrixIcons
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun AddressRow(
     tab: TabState?, editing: Boolean, field: TextFieldValue, onField: (TextFieldValue) -> Unit,
     onStartEdit: () -> Unit, onSubmit: () -> Unit, onSiteInfo: () -> Unit, onReloadOrStop: () -> Unit, bookmarked: Boolean,
     onToggleBookmark: () -> Unit,
+    onCopy: () -> Unit, onShare: () -> Unit, onPasteGo: () -> Unit, onReloadHard: () -> Unit,
 ) {
     val focus = remember { FocusRequester() }
+    var addressMenu by remember { mutableStateOf(false) }
+    var reloadMenu by remember { mutableStateOf(false) }
     LaunchedEffect(editing) { if (editing) focus.requestFocus() }
     val loading = tab?.loading == true
     Surface(
@@ -75,7 +82,7 @@ fun AddressRow(
                     )
                     if (field.text.isNotEmpty()) IconButton(onClick = { onField(TextFieldValue("")) }) { Icon(Icons.Filled.Clear, "Clear text") }
                 } else {
-                    Column(Modifier.weight(1f).clickable(onClickLabel = "Edit address") { onStartEdit() }.padding(vertical = 6.dp)) {
+                    Column(Modifier.weight(1f).combinedClickable(onClickLabel = "Edit address", onLongClickLabel = "Address actions", onClick = onStartEdit, onLongClick = { addressMenu = true }).padding(vertical = 6.dp)) {
                         Text(displayUrl(tab), maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyLarge)
                         val sub = tab?.title.orEmpty()
                         if (sub.isNotBlank() && tab?.showHome == false) Text(sub, maxLines = 1, overflow = TextOverflow.Ellipsis,
@@ -86,7 +93,24 @@ fun AddressRow(
                             Icon(Icons.Filled.Star, if (bookmarked) "Remove bookmark" else "Add bookmark",
                                 tint = if (bookmarked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                        IconButton(onClick = onReloadOrStop) { Icon(if (loading) Icons.Filled.Close else Icons.Filled.Refresh, if (loading) "Stop loading" else "Reload") }
+                        Box {
+                            Box(
+                                Modifier.size(48.dp).combinedClickable(onClickLabel = if (loading) "Stop loading" else "Reload", onLongClickLabel = "Reload without cache", onClick = onReloadOrStop, onLongClick = { reloadMenu = true })
+                                    .semantics { contentDescription = if (loading) "Stop loading" else "Reload" },
+                                contentAlignment = Alignment.Center,
+                            ) { Icon(if (loading) Icons.Filled.Close else Icons.Filled.Refresh, null) }
+                            DropdownMenu(reloadMenu, { reloadMenu = false }) {
+                                DropdownMenuItem({ Text("Reload without cache") }, { reloadMenu = false; onReloadHard() })
+                            }
+                        }
+                    }
+                    DropdownMenu(addressMenu, { addressMenu = false }) {
+                        if (tab != null && tab.hasContent && !tab.showHome) {
+                            DropdownMenuItem({ Text("Copy link") }, { addressMenu = false; onCopy() }, leadingIcon = { Icon(WyrixIcons.Copy, null) })
+                            DropdownMenuItem({ Text("Share") }, { addressMenu = false; onShare() }, leadingIcon = { Icon(WyrixIcons.Share, null) })
+                        }
+                        DropdownMenuItem({ Text("Paste and go") }, { addressMenu = false; onPasteGo() })
+                        DropdownMenuItem({ Text("Edit address") }, { addressMenu = false; onStartEdit() })
                     }
                 }
             }
@@ -111,22 +135,46 @@ private fun displayUrl(tab: TabState?): AnnotatedString {
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun ToolbarButton(desc: String, enabled: Boolean = true, onClick: () -> Unit, longLabel: String? = null, onLong: (() -> Unit)? = null, content: @Composable () -> Unit) {
+    Box(
+        Modifier.size(48.dp).clip(androidx.compose.foundation.shape.CircleShape)
+            .combinedClickable(enabled = enabled, onClickLabel = desc, onLongClickLabel = longLabel, onClick = onClick, onLongClick = onLong)
+            .semantics { contentDescription = desc },
+        contentAlignment = Alignment.Center,
+    ) {
+        androidx.compose.runtime.CompositionLocalProvider(
+            androidx.compose.material3.LocalContentColor provides MaterialTheme.colorScheme.onBackground.copy(alpha = if (enabled) 1f else 0.38f),
+        ) { content() }
+    }
+}
+
 @Composable
 fun ActionRow(
-    tab: TabState?, tabCount: Int, privateMode: Boolean, onBack: () -> Unit, onForward: () -> Unit, onHome: () -> Unit,
+    tab: TabState?, tabCount: Int, privateMode: Boolean, canReopen: Boolean, onBack: () -> Unit, onForward: () -> Unit, onHome: () -> Unit,
     onTabs: () -> Unit, onMenu: @Composable () -> Unit,
+    onBackLong: () -> Unit, onHomeLong: () -> Unit, onNewTab: () -> Unit, onNewPrivateTab: () -> Unit, onCloseTab: () -> Unit, onReopen: () -> Unit,
 ) {
+    var tabsMenu by remember { mutableStateOf(false) }
     Row(Modifier.fillMaxWidth().height(52.dp), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
         val canBack = tab != null && ((tab.canGoBack && !tab.showHome) || (tab.showHome && tab.hasContent))
-        IconButton(onClick = onBack, enabled = canBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
-        IconButton(onClick = onForward, enabled = tab?.canGoForward == true) { Icon(Icons.AutoMirrored.Filled.ArrowForward, "Forward") }
-        IconButton(onClick = onHome) { Icon(Icons.Filled.Home, "Home") }
-        IconButton(onClick = onTabs) {
-            Box(
-                Modifier.size(26.dp).border(2.dp, if (privateMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface, RoundedCornerShape(7.dp))
-                    .semantics { contentDescription = "Open tab switcher, $tabCount tabs" },
-                contentAlignment = Alignment.Center,
-            ) { Text(if (tabCount > 99) ":)" else tabCount.toString(), style = MaterialTheme.typography.labelSmall) }
+        ToolbarButton("Back", canBack, onBack, "Open history", onBackLong) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null) }
+        ToolbarButton("Forward", tab?.canGoForward == true, onForward) { Icon(Icons.AutoMirrored.Filled.ArrowForward, null) }
+        ToolbarButton("Home", true, onHome, "New tab", onHomeLong) { Icon(Icons.Filled.Home, null) }
+        Box {
+            ToolbarButton("Open tab switcher, $tabCount tabs", true, onTabs, "Tab actions", { tabsMenu = true }) {
+                Box(
+                    Modifier.size(26.dp).border(2.dp, if (privateMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onBackground, RoundedCornerShape(7.dp)),
+                    contentAlignment = Alignment.Center,
+                ) { Text(if (tabCount > 99) ":)" else tabCount.toString(), style = MaterialTheme.typography.labelSmall) }
+            }
+            DropdownMenu(tabsMenu, { tabsMenu = false }) {
+                DropdownMenuItem({ Text("New tab") }, { tabsMenu = false; onNewTab() }, leadingIcon = { Icon(WyrixIcons.Plus, null) })
+                DropdownMenuItem({ Text("New private tab") }, { tabsMenu = false; onNewPrivateTab() }, leadingIcon = { Icon(WyrixIcons.PrivateTab, null) })
+                DropdownMenuItem({ Text("Close this tab") }, { tabsMenu = false; onCloseTab() }, leadingIcon = { Icon(Icons.Filled.Close, null) })
+                DropdownMenuItem({ Text("Reopen closed tab") }, { tabsMenu = false; onReopen() }, enabled = canReopen, leadingIcon = { Icon(WyrixIcons.Reopen, null) })
+            }
         }
         Box { onMenu() }
     }

@@ -26,6 +26,7 @@ class AppContainer(app: Application) {
     val tabRepository = TabRepository(db.tabs())
     val downloads = DownloadCoordinator(app, db.downloads(), appScope)
     val downloadDao = db.downloads()
+    val reader = com.wyrix.browser.data.ReaderStore(app)
     val engine = EngineHolder(app)
     val sessions = SessionManager(engine)
 }

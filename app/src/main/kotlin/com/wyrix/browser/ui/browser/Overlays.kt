@@ -63,8 +63,8 @@ fun ErrorOverlay(tab: TabState, vm: BrowserViewModel) {
 }
 
 @Composable
-fun SuggestionList(items: List<Suggestion>, currentQuery: String, searchLabel: String, onPick: (Suggestion) -> Unit, onSearch: () -> Unit) {
-    LazyColumn(Modifier.fillMaxSize()) {
+fun SuggestionList(items: List<Suggestion>, currentQuery: String, searchLabel: String, onPick: (Suggestion) -> Unit, onSearch: () -> Unit, modifier: Modifier = Modifier.fillMaxSize()) {
+    LazyColumn(modifier) {
         if (currentQuery.isNotBlank()) item {
             ListItem(headlineContent = { Text("Search for \"$currentQuery\"") }, supportingContent = { Text(searchLabel) },
                 leadingContent = { Icon(Icons.Filled.Search, null) }, modifier = Modifier.clickable { onSearch() })
@@ -139,6 +139,13 @@ fun SheetAction(label: String, onClick: () -> Unit) {
     ListItem(headlineContent = { Text(label) }, modifier = Modifier.clickable(onClick = onClick), colors = ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent))
 }
 
+/** Text on the clipboard that is safe to offer as "paste and go" (bounded, no control characters). */
+fun readClipboard(ctx: Context): String? {
+    val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+    val t = cm.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(ctx)?.toString()?.trim()
+    return t?.takeIf { it.isNotEmpty() && it.length <= 2000 && it.none { c -> c.isISOControl() } }
+}
+
 fun copyText(ctx: Context, text: String) {
     (ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(ClipData.newPlainText("WYRIX", text))
 }
@@ -164,13 +171,17 @@ fun SiteInfoSheet(tab: TabState, vm: BrowserViewModel, onDismiss: () -> Unit) {
             Text(conn, color = if (tab.secure == false) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
             HorizontalDivider(Modifier.padding(vertical = 12.dp))
             Text("Tracking protection: ${settings?.protection?.name?.lowercase()?.replaceFirstChar { it.uppercase() }}", style = MaterialTheme.typography.titleMedium)
-            Text("${tab.blocked} trackers blocked on this page", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("${tab.blocked} different trackers blocked on this page · ${settings?.blockedTotal ?: 0} counted overall", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            val hosts = vm.blockedHosts.collectAsState().value[tab.id].orEmpty()
+            if (hosts.isNotEmpty()) {
+                Text(hosts.take(8).joinToString(", ") + if (hosts.size > 8) " and ${hosts.size - 8} more" else "", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
+            }
             if (settings?.protection != ProtectionLevel.OFF) {
                 Row(Modifier.fillMaxWidth().clickable { vm.toggleTrackingForTab() }, verticalAlignment = Alignment.CenterVertically) {
                     Text("Turn off for this tab (until closed)", Modifier.weight(1f)); Switch(tab.trackingOff, { vm.toggleTrackingForTab() })
                 }
                 Row(Modifier.fillMaxWidth().clickable { exception = !exception; vm.setSiteException(exception) }, verticalAlignment = Alignment.CenterVertically) {
-                    Text("Always allow trackers on this site", Modifier.weight(1f)); Switch(exception, { exception = it; vm.setSiteException(it) })
+                    Text("Always allow trackers on this site (remembered)", Modifier.weight(1f)); Switch(exception, { exception = it; vm.setSiteException(it) })
                 }
             }
             HorizontalDivider(Modifier.padding(vertical = 12.dp))
@@ -190,4 +201,29 @@ fun SiteInfoSheet(tab: TabState, vm: BrowserViewModel, onDismiss: () -> Unit) {
             TextButton(onClick = { vm.clearSiteData(); onDismiss() }) { Text("Clear cookies and data for this site") }
         }
     }
+}
+
+@Composable
+fun TranslateDialog(tab: TabState, lastLang: String, vm: BrowserViewModel, onDismiss: () -> Unit) {
+    val device = java.util.Locale.getDefault().language
+    var lang by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(lastLang.takeIf { com.wyrix.browser.core.TranslateLanguages.isSupported(it) } ?: com.wyrix.browser.core.TranslateLanguages.defaultFor(device)) }
+    AlertDialog(
+        onDismissRequest = onDismiss, title = { Text("Translate this page") },
+        text = {
+            Column {
+                Text("This uses Google Translate's website. The address of this page is sent to Google, and the translated page loads from Google. It may not work on every site." +
+                    if (tab.isPrivate) " This is a private tab: translating leaves a record with Google." else "", style = MaterialTheme.typography.bodySmall)
+                Spacer(Modifier.height(8.dp))
+                LazyColumn(Modifier.heightIn(max = 260.dp)) {
+                    items(com.wyrix.browser.core.TranslateLanguages.all, key = { it.first }) { (code, name) ->
+                        Row(Modifier.fillMaxWidth().clickable { lang = code }.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                            RadioButton(selected = lang == code, onClick = { lang = code }); Spacer(Modifier.width(8.dp)); Text(name)
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = { vm.translateCurrent(lang); onDismiss() }) { Text("Translate") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
 }

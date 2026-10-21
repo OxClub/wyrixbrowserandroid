@@ -131,7 +131,7 @@ fun SettingSwitch(title: String, subtitle: String? = null, checked: Boolean, ena
     ListItem(
         headlineContent = { Text(title) },
         supportingContent = subtitle?.let { { Text(it) } },
-        trailingContent = { Switch(checked, onChange, enabled = enabled) },
+        trailingContent = { Switch(checked, onChange, enabled = enabled, colors = SwitchDefaults.colors(uncheckedTrackColor = MaterialTheme.colorScheme.surfaceVariant, uncheckedThumbColor = MaterialTheme.colorScheme.onSurfaceVariant, uncheckedBorderColor = MaterialTheme.colorScheme.onSurfaceVariant)) },
         modifier = Modifier.clickable(enabled = enabled) { onChange(!checked) },
         colors = ListItemDefaults.colors(containerColor = Color.Transparent),
     )

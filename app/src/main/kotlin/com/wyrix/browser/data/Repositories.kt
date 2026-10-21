@@ -44,6 +44,7 @@ class BookmarkRepository(private val dao: BookmarkDao) {
     fun recent(limit: Int) = dao.observeRecent(limit)
     suspend fun search(q: String, limit: Int = 100) = if (q.isBlank()) emptyList() else dao.search(likePattern(q), limit)
     suspend fun find(url: String): BookmarkEntity? = dao.findByNorm(UrlTools.normalize(url))
+    suspend fun folders(): List<FolderEntity> = dao.allFolders()
 
     suspend fun add(title: String, url: String, folderId: Long?, workspaceId: String?, now: Long = System.currentTimeMillis()): AddResult {
         if (!UrlTools.isWebUrl(url)) return AddResult.Invalid

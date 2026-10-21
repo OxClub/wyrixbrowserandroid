@@ -10,10 +10,10 @@ import org.mozilla.geckoview.GeckoView
 
 /** Single GeckoView whose attached session is swapped when the selected tab changes. */
 @Composable
-fun GeckoViewHost(session: GeckoSession?, runtime: GeckoRuntime, modifier: Modifier = Modifier) {
+fun GeckoViewHost(session: GeckoSession?, runtime: GeckoRuntime, modifier: Modifier = Modifier, onView: (GeckoView) -> Unit = {}) {
     AndroidView(
         modifier = modifier,
-        factory = { ctx -> GeckoView(ctx) },
+        factory = { ctx -> GeckoView(ctx).also(onView) },
         update = { view ->
             if (view.session !== session) {
                 if (view.session != null) view.releaseSession()

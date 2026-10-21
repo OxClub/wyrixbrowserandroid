@@ -39,6 +39,7 @@ fun BookmarksScreen(vm: BrowserViewModel) {
     var edit by remember { mutableStateOf<BookmarkEntity?>(null) }
     var renameFolder by remember { mutableStateOf<FolderEntity?>(null) }
     var deleteFolder by remember { mutableStateOf<FolderEntity?>(null) }
+    var moveTarget by remember { mutableStateOf<BookmarkEntity?>(null) }
 
     val items by remember(folderId) { repo.observeIn(folderId) }.collectAsStateWithLifecycle(emptyList())
     val folders by remember(folderId) { repo.observeFolders(folderId) }.collectAsStateWithLifecycle(emptyList())
@@ -99,17 +100,40 @@ fun BookmarksScreen(vm: BrowserViewModel) {
     if (newFolder) TextInputDialog("New folder", label = "Name", onConfirm = { n -> scope.launch { repo.createFolder(n, folderId) }; newFolder = false }, onDismiss = { newFolder = false })
     renameFolder?.let { f -> TextInputDialog("Rename folder", f.name, "Name", onConfirm = { n -> scope.launch { repo.renameFolder(f, n) }; renameFolder = null }, onDismiss = { renameFolder = null }) }
     deleteFolder?.let { f -> ConfirmDialog("Delete \"${f.name}\"?", "The folder and every bookmark inside it will be deleted.", "Delete", { scope.launch { repo.deleteFolderTree(f) }; deleteFolder = null }, { deleteFolder = null }) }
-    edit?.let { b -> EditBookmarkDialog(b, onSave = { t, u -> scope.launch { repo.update(b.copy(title = t.trim().ifEmpty { b.title }, url = if (UrlTools.isWebUrl(u)) u else b.url)) }; edit = null }) { edit = null } }
+    edit?.let { b -> EditBookmarkDialog(b, onSave = { t, u -> scope.launch { repo.update(b.copy(title = t.trim().ifEmpty { b.title }, url = if (UrlTools.isWebUrl(u)) u else b.url)) }; edit = null }, onMove = { moveTarget = b; edit = null }) { edit = null } }
+    moveTarget?.let { b ->
+        val all by produceState(emptyList<FolderEntity>()) { value = repo.folders() }
+        fun pathOf(f: FolderEntity): String {
+            val names = ArrayList<String>(); var id: Long? = f.id; var guard = 0
+            while (id != null && guard++ < 32) {
+                val target = id
+                val cur = all.firstOrNull { it.id == target } ?: break
+                names.add(0, cur.name); id = cur.parentId
+            }
+            return names.joinToString(" / ")
+        }
+        AlertDialog(
+            onDismissRequest = { moveTarget = null }, title = { Text("Move \"${b.title.take(30)}\" to") },
+            text = {
+                LazyColumn(Modifier.heightIn(max = 320.dp)) {
+                    item { ListItem(headlineContent = { Text("Bookmarks (top level)") }, leadingContent = { Icon(WyrixIcons.Folder, null) }, modifier = Modifier.clickable { scope.launch { repo.move(b, null) }; moveTarget = null }) }
+                    items(all, key = { it.id }) { f -> ListItem(headlineContent = { Text(pathOf(f)) }, leadingContent = { Icon(WyrixIcons.Folder, null) }, modifier = Modifier.clickable { scope.launch { repo.move(b, f.id) }; moveTarget = null }) }
+                }
+            },
+            confirmButton = { TextButton(onClick = { moveTarget = null }) { Text("Cancel") } },
+        )
+    }
 }
 
 @Composable
-private fun EditBookmarkDialog(b: BookmarkEntity, onSave: (String, String) -> Unit, onDismiss: () -> Unit) {
+private fun EditBookmarkDialog(b: BookmarkEntity, onSave: (String, String) -> Unit, onMove: () -> Unit, onDismiss: () -> Unit) {
     var title by remember { mutableStateOf(b.title) }
     var url by remember { mutableStateOf(b.url) }
     AlertDialog(onDismissRequest = onDismiss, title = { Text("Edit bookmark") },
         text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedTextField(title, { title = it.take(300) }, label = { Text("Title") }, singleLine = true)
             OutlinedTextField(url, { url = it.take(2000) }, label = { Text("Address") }, singleLine = true, isError = !UrlTools.isWebUrl(url))
+            TextButton(onClick = onMove) { Text("Move to folder…") }
         } },
         confirmButton = { TextButton(onClick = { onSave(title, url) }, enabled = UrlTools.isWebUrl(url)) { Text("Save") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } })

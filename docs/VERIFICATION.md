@@ -12,3 +12,12 @@ Most likely compile/runtime issues, in rough order of probability:
 6. **Behavioural**: per-site tracking exceptions persistence; `onLoadError` blank-page approach (URL bar may briefly show `data:`; handled by ignoring `data:` locations); history recording timing vs title events.
 
 Unit-test expectations were checked by hand; a failing test is as likely to be a wrong expectation as a wrong implementation.
+
+## 0.2.0 additions — new unverified API usage
+Added code that was **not compiled**. Most likely compile problems, in order:
+1. `GeckoView.capturePixels()` (tab previews) in `BrowserViewModel.captureThumbnail`.
+2. `ContentBlocking.BlockEvent.uri` in `TabSession` (tracker host).
+3. `Modifier.animateItem()`, `SwipeToDismissBox` (Compose 1.7 / Material3 1.3 as pinned in the version catalog).
+4. Framework `BiometricPrompt` builder/callback signatures in `security/BiometricGate.kt`.
+5. `ImageVector.Builder.addPath(...)` named arguments in `ui/common/WyrixIcons.kt`.
+Behavioural things to test on a device: per-site tracking exception takes effect after reload; permission reset for a site not visited this session; reader extraction on a few real news sites; the lock prompt after backgrounding; swipe-to-close in grid layout.

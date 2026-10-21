@@ -30,6 +30,8 @@ class SessionManager(private val engine: EngineHolder) : TabSession.Hooks {
     var trackingProtectionOn: () -> Boolean = { true }
     var limitPopups: () -> Boolean = { true }
     var isTabSelected: (String) -> Boolean = { true }
+    /** Whether tracking protection should be on for a tab (per-site exceptions, per-tab toggle, global level). */
+    var trackingFor: (TabState) -> Boolean = { !it.trackingOff && trackingProtectionOn() }
 
     private fun emit(e: TabEvent) { _events.tryEmit(e) }
 
@@ -39,7 +41,7 @@ class SessionManager(private val engine: EngineHolder) : TabSession.Hooks {
     /** Returns the live session for [tab], creating or restoring it if needed. */
     fun ensure(tab: TabState): TabSession {
         sessions[tab.id]?.let { return it }
-        val ts = create(tab.id, tab.isPrivate, tab.desktopMode, !tab.trackingOff && trackingProtectionOn())
+        val ts = create(tab.id, tab.isPrivate, tab.desktopMode, trackingFor(tab))
         val state = saved.remove(tab.id)
         if (!(state != null && ts.restore(state)) && tab.url.isNotBlank()) ts.load(tab.url)
         evictIfNeeded(tab.id)
@@ -51,7 +53,7 @@ class SessionManager(private val engine: EngineHolder) : TabSession.Hooks {
         saved.remove(tab.id)
         val existing = sessions[tab.id]
         if (existing != null) { existing.load(url); return existing }
-        val ts = create(tab.id, tab.isPrivate, tab.desktopMode, !tab.trackingOff && trackingProtectionOn())
+        val ts = create(tab.id, tab.isPrivate, tab.desktopMode, trackingFor(tab))
         ts.load(url)
         evictIfNeeded(tab.id)
         return ts

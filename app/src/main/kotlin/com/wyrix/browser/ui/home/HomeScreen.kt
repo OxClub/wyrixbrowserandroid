@@ -40,6 +40,8 @@ fun HomeScreen(vm: BrowserViewModel, onStartEdit: () -> Unit) {
     val shortcuts by vm.shortcuts.collectAsStateWithLifecycle()
     val frequent by vm.frequent.collectAsStateWithLifecycle()
     val recent by vm.recentBookmarks.collectAsStateWithLifecycle()
+    val recentHistory by vm.recentHistory.collectAsStateWithLifecycle()
+    val saved by vm.savedArticles.collectAsStateWithLifecycle()
     val privateMode by vm.privateMode.collectAsStateWithLifecycle()
     val blockedSession by vm.blockedSession.collectAsStateWithLifecycle()
     val st = s ?: return
@@ -49,7 +51,7 @@ fun HomeScreen(vm: BrowserViewModel, onStartEdit: () -> Unit) {
     val limit = when (st.homeLayout) { HomeLayout.COMPACT -> 4; HomeLayout.STANDARD -> 8; HomeLayout.EXPANDED -> 12 }
 
     Box(
-        Modifier.fillMaxSize().background(
+        Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).background(
             Brush.verticalGradient(listOf(st.accent.primary().copy(alpha = if (privateMode) 0.22f else 0.12f), MaterialTheme.colorScheme.background, MaterialTheme.colorScheme.background)),
         ),
     ) {
@@ -94,6 +96,23 @@ fun HomeScreen(vm: BrowserViewModel, onStartEdit: () -> Unit) {
                         leadingContent = { SiteTile(UrlTools.hostOf(b.url), 36.dp) }, modifier = Modifier.clickable { vm.loadUrl(b.url) },
                         colors = ListItemDefaults.colors(containerColor = Color.Transparent))
                 }
+            }
+            if (st.showRecent && !privateMode && recentHistory.isNotEmpty()) {
+                SectionHeader("Recently visited", Modifier.padding(horizontal = 0.dp))
+                recentHistory.take(if (st.homeLayout == HomeLayout.COMPACT) 3 else 5).forEach { h ->
+                    ListItem(headlineContent = { Text(h.title.ifBlank { h.host }, maxLines = 1) }, supportingContent = { Text(h.host, maxLines = 1) },
+                        leadingContent = { SiteTile(h.host, 36.dp) }, modifier = Modifier.clickable { vm.loadUrl(h.url) },
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent))
+                }
+            }
+            if (st.showSaved && saved.isNotEmpty()) {
+                SectionHeader("Saved articles", Modifier.padding(horizontal = 0.dp))
+                saved.take(3).forEach { m ->
+                    ListItem(headlineContent = { Text(m.title.ifBlank { m.url }, maxLines = 1) }, supportingContent = { Text(m.siteName, maxLines = 1) },
+                        leadingContent = { Icon(WyrixIcons.Reader, null) }, modifier = Modifier.clickable { vm.openSavedArticle(m.id) },
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent))
+                }
+                TextButton(onClick = { vm.openSavedList() }) { Text("See all saved articles") }
             }
             if (st.showFrequent && !privateMode && frequent.isNotEmpty()) {
                 SectionHeader("Frequently visited", Modifier.padding(horizontal = 0.dp))
@@ -170,6 +189,8 @@ private fun CustomizeDialog(vm: BrowserViewModel, onDismiss: () -> Unit) {
             Column {
                 SettingSwitch("Shortcuts", checked = st.showShortcuts) { vm.setPref(Keys.SHOW_SHORTCUTS, it) }
                 SettingSwitch("Recent bookmarks", checked = st.showBookmarks) { vm.setPref(Keys.SHOW_BOOKMARKS, it) }
+                SettingSwitch("Recently visited", checked = st.showRecent) { vm.setPref(Keys.SHOW_RECENT, it) }
+                SettingSwitch("Saved articles", checked = st.showSaved) { vm.setPref(Keys.SHOW_SAVED, it) }
                 SettingSwitch("Frequently visited", checked = st.showFrequent) { vm.setPref(Keys.SHOW_FREQUENT, it) }
                 SettingSwitch("Privacy summary", checked = st.showPrivacyStats) { vm.setPref(Keys.SHOW_STATS, it) }
                 TextButton(onClick = { vm.openScreen(Screen.SETTINGS); onDismiss() }) { Text("More appearance options in Settings") }

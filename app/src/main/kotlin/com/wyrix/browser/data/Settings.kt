@@ -50,6 +50,21 @@ data class Settings(
     val blockedTotal: Long = 0,
     val currentWorkspaceId: String = Workspaces.PERSONAL,
     val selectedTabId: String? = null,
+    val showRecent: Boolean = true,
+    val showSaved: Boolean = true,
+    val lockApp: Boolean = false,
+    val lockPrivate: Boolean = false,
+    /** Seconds in the background before the lock re-engages (0 = every time). */
+    val lockTimeoutSec: Int = 0,
+    /** Hosts where tracking protection is turned off by the user. */
+    val trackingExceptionHosts: Set<String> = emptySet(),
+    /** Remembered site permission states as "host|kind|state" (display + management list). */
+    val sitePermissions: Set<String> = emptySet(),
+    /** Hosts whose permissions the user asked to reset; applied on the next visit. */
+    val sitePermResetHosts: Set<String> = emptySet(),
+    val readerScale: Int = 100,
+    val readerSerif: Boolean = true,
+    val translateLang: String = "",
 )
 
 object Keys {
@@ -80,6 +95,17 @@ object Keys {
     val BLOCKED_TOTAL = longPreferencesKey("blocked_total")
     val WORKSPACE = stringPreferencesKey("current_workspace")
     val SELECTED_TAB = stringPreferencesKey("selected_tab")
+    val SHOW_RECENT = booleanPreferencesKey("home_recent")
+    val SHOW_SAVED = booleanPreferencesKey("home_saved")
+    val LOCK_APP = booleanPreferencesKey("lock_app")
+    val LOCK_PRIVATE = booleanPreferencesKey("lock_private")
+    val LOCK_TIMEOUT = intPreferencesKey("lock_timeout_sec")
+    val TRACKING_EXCEPTIONS = stringSetPreferencesKey("tracking_exception_hosts")
+    val SITE_PERMS = stringSetPreferencesKey("site_permissions")
+    val SITE_PERM_RESET = stringSetPreferencesKey("site_perm_reset_hosts")
+    val READER_SCALE = intPreferencesKey("reader_scale")
+    val READER_SERIF = booleanPreferencesKey("reader_serif")
+    val TRANSLATE_LANG = stringPreferencesKey("translate_lang")
 
     val APPEARANCE: List<Preferences.Key<*>> = listOf(THEME, TRUE_BLACK, ACCENT, HIGH_CONTRAST, REDUCED_MOTION, TOOLBAR, TAB_LAYOUT, HOME_LAYOUT)
 }
@@ -140,6 +166,30 @@ class SettingsStore(private val context: Context) {
         context.settingsDataStore.edit { if (id == null) it.remove(Keys.SELECTED_TAB) else it[Keys.SELECTED_TAB] = id }
     }
 
+    suspend fun setTrackingException(host: String, enabled: Boolean) {
+        context.settingsDataStore.edit {
+            val cur = it[Keys.TRACKING_EXCEPTIONS].orEmpty()
+            it[Keys.TRACKING_EXCEPTIONS] = if (enabled) cur + host else cur - host
+        }
+    }
+
+    /** Replaces the remembered permission entries of [host] with [entries] (each "host|kind|state"). */
+    suspend fun replaceSitePermissions(host: String, entries: Set<String>) {
+        context.settingsDataStore.edit {
+            val cur = it[Keys.SITE_PERMS].orEmpty()
+            val next = cur.filterNot { e -> e.substringBefore('|') == host }.toSet() + entries
+            if (next.isEmpty()) it.remove(Keys.SITE_PERMS) else it[Keys.SITE_PERMS] = next.take(500).toSet()
+        }
+    }
+
+    suspend fun setPermissionResetPending(host: String, pending: Boolean) {
+        context.settingsDataStore.edit {
+            val cur = it[Keys.SITE_PERM_RESET].orEmpty()
+            val next = if (pending) cur + host else cur - host
+            if (next.isEmpty()) it.remove(Keys.SITE_PERM_RESET) else it[Keys.SITE_PERM_RESET] = next
+        }
+    }
+
     suspend fun updateDesktopHost(host: String, enabled: Boolean) {
         context.settingsDataStore.edit {
             val cur = it[Keys.DESKTOP_HOSTS].orEmpty()
@@ -177,6 +227,17 @@ class SettingsStore(private val context: Context) {
                 blockedTotal = p[Keys.BLOCKED_TOTAL] ?: d.blockedTotal,
                 currentWorkspaceId = p[Keys.WORKSPACE] ?: d.currentWorkspaceId,
                 selectedTabId = p[Keys.SELECTED_TAB],
+                showRecent = p[Keys.SHOW_RECENT] ?: d.showRecent,
+                showSaved = p[Keys.SHOW_SAVED] ?: d.showSaved,
+                lockApp = p[Keys.LOCK_APP] ?: d.lockApp,
+                lockPrivate = p[Keys.LOCK_PRIVATE] ?: d.lockPrivate,
+                lockTimeoutSec = (p[Keys.LOCK_TIMEOUT] ?: d.lockTimeoutSec).coerceIn(0, 3600),
+                trackingExceptionHosts = p[Keys.TRACKING_EXCEPTIONS] ?: d.trackingExceptionHosts,
+                sitePermissions = p[Keys.SITE_PERMS] ?: d.sitePermissions,
+                sitePermResetHosts = p[Keys.SITE_PERM_RESET] ?: d.sitePermResetHosts,
+                readerScale = (p[Keys.READER_SCALE] ?: d.readerScale).coerceIn(70, 220),
+                readerSerif = p[Keys.READER_SERIF] ?: d.readerSerif,
+                translateLang = p[Keys.TRANSLATE_LANG] ?: d.translateLang,
             )
         }
     }
