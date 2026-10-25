@@ -1,9 +1,17 @@
-# TEMPLATE. Requires repository secrets (see docs/RELEASE.md):
-#   WYRIX_KEYSTORE_BASE64, WYRIX_KEYSTORE_PASSWORD, WYRIX_KEY_ALIAS, WYRIX_KEY_PASSWORD
+# Builds SIGNED release artifacts: an AAB for Google Play and an APK for Amazon Appstore (and sideloading).
+# Needs repository secrets (docs/STORE_RELEASE.md): WYRIX_KEYSTORE_BASE64, WYRIX_KEYSTORE_PASSWORD, WYRIX_KEY_ALIAS, WYRIX_KEY_PASSWORD
+# Nothing is uploaded to any store automatically.
 name: Release (signed AAB + APK)
 
 on:
   workflow_dispatch:
+    inputs:
+      version_name:
+        description: "Version name shown to users (default: from build.gradle.kts)"
+        required: false
+      version_code:
+        description: "Version code (must be higher than every previous store upload). Default: 100 + run number"
+        required: false
   push:
     tags: ["v*"]
 
@@ -13,15 +21,26 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
-    environment: release   # use a protected GitHub Environment to gate the secrets
+    timeout-minutes: 75
+    environment: release   # optional: protect the secrets with required reviewers
+    env:
+      ABIS: "arm64-v8a,armeabi-v7a"   # 64-bit for Play, plus 32-bit for older Fire tablets
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
         with: { distribution: temurin, java-version: "17" }
+
+      - name: Install SDK packages
+        run: |
+          SDKM="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDKM" --licenses >/dev/null || true
+          "$SDKM" "platforms;android-36" "build-tools;36.0.0" "platform-tools"
+
       - uses: gradle/actions/setup-gradle@v4
         with: { gradle-version: "8.11.1" }
-      - run: bash tools/resolve-geckoview.sh
+
+      - run: bash tools/resolve-geckoview.sh && grep '^wyrix.geckoview' gradle.properties
+
       - name: Decode keystore
         env:
           KS_B64: ${{ secrets.WYRIX_KEYSTORE_BASE64 }}
@@ -29,19 +48,50 @@ jobs:
           test -n "$KS_B64" || { echo "::error::WYRIX_KEYSTORE_BASE64 secret is not configured"; exit 1; }
           echo "$KS_B64" | base64 -d > "$RUNNER_TEMP/wyrix-release.jks"
           echo "WYRIX_KEYSTORE_PATH=$RUNNER_TEMP/wyrix-release.jks" >> "$GITHUB_ENV"
-      - name: Build signed release
+
+      - name: Compute version
+        run: |
+          CODE="${{ github.event.inputs.version_code }}"
+          [ -n "$CODE" ] || CODE=$((100 + ${{ github.run_number }}))
+          echo "VERSION_CODE=$CODE" >> "$GITHUB_ENV"
+          NAME="${{ github.event.inputs.version_name }}"
+          if [ -z "$NAME" ] && [ "${GITHUB_REF_TYPE}" = "tag" ]; then NAME="${GITHUB_REF_NAME#v}"; fi
+          echo "VERSION_NAME_ARG=${NAME:+-Pwyrix.versionName=$NAME}" >> "$GITHUB_ENV"
+
+      - name: Unit tests
+        run: gradle --no-daemon :app:testReleaseUnitTest -Pwyrix.abis="$ABIS"
+
+      - name: Build signed AAB and APK
         env:
           WYRIX_KEYSTORE_PASSWORD: ${{ secrets.WYRIX_KEYSTORE_PASSWORD }}
           WYRIX_KEY_ALIAS: ${{ secrets.WYRIX_KEY_ALIAS }}
           WYRIX_KEY_PASSWORD: ${{ secrets.WYRIX_KEY_PASSWORD }}
-        run: gradle --no-daemon :app:bundleRelease :app:assembleRelease
+        run: >
+          gradle --no-daemon --stacktrace :app:bundleRelease :app:assembleRelease
+          -Pwyrix.abis="$ABIS" -Pwyrix.versionCode="$VERSION_CODE" $VERSION_NAME_ARG
+
+      - name: Verify signatures and collect files
+        run: |
+          set -e
+          mkdir -p dist
+          APK=$(ls app/build/outputs/apk/release/*.apk | head -n1)
+          AAB=$(ls app/build/outputs/bundle/release/*.aab | head -n1)
+          APKSIGNER=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | tail -n1)
+          echo "== APK signature =="; "$APKSIGNER" verify --verbose --print-certs "$APK" | head -n 20
+          echo "== AAB signature =="; jarsigner -verify -certs "$AAB" | head -n 5
+          echo "== Signing certificate (SHA-256) =="
+          keytool -printcert -jarfile "$APK" | grep -E "SHA256|Owner" || true
+          cp "$AAB" "dist/WYRIX-play-v${VERSION_CODE}.aab"
+          cp "$APK" "dist/WYRIX-amazon-v${VERSION_CODE}.apk"
+          (cd dist && sha256sum * > SHA256SUMS.txt && cat SHA256SUMS.txt)
+
       - uses: actions/upload-artifact@v4
         with:
-          name: wyrix-release
-          path: |
-            app/build/outputs/bundle/release/*.aab
-            app/build/outputs/apk/release/*.apk
+          name: wyrix-release-${{ env.VERSION_CODE }}
+          path: dist/*
           if-no-files-found: error
+          retention-days: 30
+
       - name: Remove keystore
         if: always()
         run: rm -f "$RUNNER_TEMP/wyrix-release.jks"

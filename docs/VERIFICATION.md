@@ -21,3 +21,8 @@ Added code that was **not compiled**. Most likely compile problems, in order:
 4. Framework `BiometricPrompt` builder/callback signatures in `security/BiometricGate.kt`.
 5. `ImageVector.Builder.addPath(...)` named arguments in `ui/common/WyrixIcons.kt`.
 Behavioural things to test on a device: per-site tracking exception takes effect after reload; permission reset for a site not visited this session; reader extraction on a few real news sites; the lock prompt after backgrounding; swipe-to-close in grid layout.
+
+## 0.3.0 additions — what to check first
+API names verified against Mozilla's published GeckoView javadoc for the login hooks (`Autocomplete.StorageDelegate`, `PromptDelegate.onLoginSave/onLoginSelect`, `LoginEntry` + builder, `AutocompleteRequest.confirm/dismiss`). `GeckoRuntimeSettings.setLoginAutofillEnabled` is confirmed to exist. Still unverified against GeckoView 140 specifically: `Autocomplete.Option.value`, `GeckoRuntime.setAutocompleteStorageDelegate`.
+Other likely compile trouble: CameraX/ZXing calls in `ui/scanner/ScannerScreen.kt` (`LocalLifecycleOwner` import path, `PlanarYUVLuminanceSource`), Compose drawing calls in `ui/home/HomeBackgrounds.kt`, new dependency versions in `gradle/libs.versions.toml`.
+Device checks: login save/fill on a real site (and exact-host matching), vault survives app restart and fails safe if the file is damaged (`VaultStoreTest`), QR scan in low light, camera permission flow, the R8-minified release APK (never run), Fire tablet install.

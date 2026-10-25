@@ -23,6 +23,11 @@ import com.wyrix.browser.data.*
 import com.wyrix.browser.ui.common.*
 import com.wyrix.browser.ui.library.ClearDialog
 import com.wyrix.browser.security.BiometricGate
+import com.wyrix.browser.ui.home.HomeBackdrop
+import com.wyrix.browser.ui.home.HomeBackgrounds
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.border
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.items
 import androidx.compose.ui.text.font.FontWeight
 
@@ -70,6 +75,9 @@ fun SettingsScreen(vm: BrowserViewModel) {
                         } else ctx.startActivity(Intent(AndroidSettings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS))
                     }, colors = ListItemDefaults.colors(containerColor = Color.Transparent))
             }
+            item { SectionHeader("Tools") }
+            item { ListItem(headlineContent = { Text("Passwords") }, supportingContent = { Text("Encrypted vault, autofill, generator") }, modifier = Modifier.clickable { vm.openScreen(Screen.PASSWORDS) }, colors = ListItemDefaults.colors(containerColor = Color.Transparent)) }
+            item { ListItem(headlineContent = { Text("Scan QR code") }, supportingContent = { Text("Read QR codes and barcodes with the camera or a photo") }, modifier = Modifier.clickable { vm.openScreen(Screen.SCANNER) }, colors = ListItemDefaults.colors(containerColor = Color.Transparent)) }
             item { SectionHeader("Search") }
             item { row("Search engine", engineName, "engine")() }
             item { SettingSwitch("HTTPS first", "Try secure connections for typed addresses; HTTP only if you choose it after a failure", st.httpsFirst) { vm.setPref(Keys.HTTPS_FIRST, it) } }
@@ -113,6 +121,7 @@ fun SettingsScreen(vm: BrowserViewModel) {
             item { SettingSwitch("Reduce motion", "Also follows Android battery saver", st.reducedMotion) { vm.setPref(Keys.REDUCED_MOTION, it) } }
             item { row("Toolbar position", st.toolbarPosition.name.lowercase().replaceFirstChar { it.uppercase() }, "toolbar")() }
             item { row("Home layout", st.homeLayout.name.lowercase().replaceFirstChar { it.uppercase() }, "home")() }
+            item { row("Home background", HomeBackgrounds.label(st.homeBackground), "homeBg")() }
             item { ListItem(headlineContent = { Text("Reset appearance to defaults") }, modifier = Modifier.clickable { vm.resetAppearance() }, colors = ListItemDefaults.colors(containerColor = Color.Transparent)) }
             item { SectionHeader("Bookmarks") }
             item { ListItem(headlineContent = { Text("Import bookmarks (HTML)") }, supportingContent = { Text("Export from your old browser as an HTML file, then pick it here") }, modifier = Modifier.clickable { importer.launch(arrayOf("text/html", "text/plain", "*/*")) }, colors = ListItemDefaults.colors(containerColor = Color.Transparent)) }
@@ -133,6 +142,7 @@ fun SettingsScreen(vm: BrowserViewModel) {
         "clearHistory" -> ClearDialog({ dialog = null }) { since -> vm.clearHistory(since); dialog = null }
         "lockTimeout" -> ChoiceDialog("Lock after leaving the app", listOf(0 to "Immediately", 30 to "After 30 seconds", 60 to "After 1 minute", 300 to "After 5 minutes"), st.lockTimeoutSec, { vm.setPref(Keys.LOCK_TIMEOUT, it) }) { dialog = null }
         "sitePerms" -> SitePermissionsDialog(st, vm) { dialog = null }
+        "homeBg" -> BackgroundPickerDialog(st, vm) { dialog = null }
         "trackingExceptions" -> AlertDialog(
             onDismissRequest = { dialog = null }, title = { Text("Tracking protection off") },
             text = {
@@ -180,5 +190,36 @@ private fun SitePermissionsDialog(st: Settings, vm: BrowserViewModel, onDismiss:
             }
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } },
+    )
+}
+
+@Composable
+private fun BackgroundPickerDialog(st: Settings, vm: BrowserViewModel, onDismiss: () -> Unit) {
+    val ctx = LocalContext.current
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { u -> if (u != null) vm.setHomeBackgroundPhoto(ctx, u) }
+    AlertDialog(
+        onDismissRequest = onDismiss, title = { Text("Home background") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                HomeBackgrounds.all.chunked(3).forEach { row ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        row.forEach { (id, name) ->
+                            val selected = st.homeBackground == id
+                            Column(Modifier.weight(1f).clickable { vm.setPref(Keys.HOME_BACKGROUND, id) }) {
+                                Box(Modifier.fillMaxWidth().aspectRatio(0.62f).clip(RoundedCornerShape(12.dp)).border(if (selected) 2.dp else 1.dp, if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline, RoundedCornerShape(12.dp))) {
+                                    HomeBackdrop(id, st.accent, null, Color(0xFF05060A))
+                                }
+                                Text(name, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 4.dp))
+                            }
+                        }
+                        repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
+                    }
+                }
+                TextButton(onClick = { picker.launch("image/*") }) { Text(if (st.homeBackground == HomeBackgrounds.CUSTOM) "Choose a different photo…" else "Use my own photo…") }
+                if (st.homeBackground == HomeBackgrounds.CUSTOM) TextButton(onClick = { com.wyrix.browser.data.HomeBackgroundStore.clear(ctx); vm.setPref(Keys.HOME_BACKGROUND, "aurora") }) { Text("Remove my photo") }
+                Text("Backgrounds are generated by the app. Your own photo is copied into private storage and never uploaded.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Done") } },
     )
 }

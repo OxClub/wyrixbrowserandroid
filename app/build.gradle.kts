@@ -22,8 +22,9 @@ android {
         applicationId = "com.wyrix.browser"
         minSdk = 28
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0"
+        // Store builds pass -Pwyrix.versionCode=<n> (CI uses the run number); every upload must be higher than the last.
+        versionCode = providers.gradleProperty("wyrix.versionCode").orNull?.toIntOrNull() ?: 3
+        versionName = providers.gradleProperty("wyrix.versionName").orNull ?: "0.3.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "GECKOVIEW_VERSION", "\"$geckoVersion\"")
         ndk { abiFilters += providers.gradleProperty("wyrix.abis").orElse("arm64-v8a").get().split(",") }
@@ -97,6 +98,11 @@ dependencies {
     implementation(libs.datastore.preferences)
     implementation("androidx.datastore:datastore-preferences-core:1.1.1")
     implementation(libs.coroutines.android)
+    implementation(libs.camera.core)
+    implementation(libs.camera.camera2)
+    implementation(libs.camera.lifecycle)
+    implementation(libs.camera.view)
+    implementation(libs.zxing.core)
 
     debugImplementation(libs.compose.ui.tooling)
     debugImplementation(platform(libs.compose.bom))

@@ -39,6 +39,10 @@ import com.wyrix.browser.ui.common.WyrixIcons
 import com.wyrix.browser.ui.reader.ReaderScreen
 import com.wyrix.browser.ui.reader.SavedArticlesScreen
 import com.wyrix.browser.ui.security.LockOverlay
+import com.wyrix.browser.ui.passwords.PasswordsScreen
+import com.wyrix.browser.ui.scanner.QrCodeDialog
+import com.wyrix.browser.ui.scanner.ScannerScreen
+import com.wyrix.browser.security.BiometricGate
 import org.mozilla.geckoview.GeckoView
 
 @Composable
@@ -57,6 +61,7 @@ fun BrowserScreen(vm: BrowserViewModel) {
     val scope = rememberCoroutineScope()
     var geckoView by remember { mutableStateOf<GeckoView?>(null) }
     var translateDialog by remember { mutableStateOf(false) }
+    var qrDialog by remember { mutableStateOf(false) }
 
     // Android runtime permission bridge for camera/mic/location requested by pages.
     var pendingPerm by remember { mutableStateOf<((Boolean) -> Unit)?>(null) }
@@ -66,6 +71,13 @@ fun BrowserScreen(vm: BrowserViewModel) {
     DisposableEffect(Unit) {
         vm.setAndroidPermissionRequester { perms, cb -> pendingPerm = cb; permLauncher.launch(perms) }
         onDispose { vm.setAndroidPermissionRequester(null) }
+    }
+    LaunchedEffect(Unit) {
+        vm.unlockRequests.collect {
+            val a = ctx as? android.app.Activity
+            if (a == null) vm.completeUnlock(false)
+            else BiometricGate.authenticate(a, "Fill saved password", "Confirm it's you") { ok -> vm.completeUnlock(ok) }
+        }
     }
     LaunchedEffect(Unit) {
         vm.toasts.collect { Toast.makeText(ctx, it, Toast.LENGTH_SHORT).show() }
@@ -112,7 +124,7 @@ fun BrowserScreen(vm: BrowserViewModel) {
                 canReopen = tabsState.recentlyClosed.isNotEmpty(),
                 onBack = { vm.handleBack() }, onForward = { vm.goForward() }, onHome = { editing = false; vm.goHome() },
                 onTabs = { editing = false; scope.launch { geckoView?.let { vm.captureThumbnail(it) }; vm.openScreen(Screen.TABS) } },
-                onMenu = { BrowserMenu(vm, tab, privateMode, onShare = { shareText(ctx, it) }, onTranslate = { translateDialog = true }) },
+                onMenu = { BrowserMenu(vm, tab, privateMode, onShare = { shareText(ctx, it) }, onTranslate = { translateDialog = true }, onQr = { qrDialog = true }) },
                 onBackLong = { vm.openScreen(Screen.HISTORY) }, onHomeLong = { vm.newTab(privateMode) },
                 onNewTab = { vm.newTab(false) }, onNewPrivateTab = { vm.newTab(true) },
                 onCloseTab = { tab?.let { vm.closeTab(it.id) } }, onReopen = { vm.reopenClosed() })
@@ -168,6 +180,8 @@ fun BrowserScreen(vm: BrowserViewModel) {
             Screen.ABOUT -> AboutScreen(vm)
             Screen.READER -> ReaderScreen(vm)
             Screen.SAVED -> SavedArticlesScreen(vm)
+            Screen.PASSWORDS -> PasswordsScreen(vm)
+            Screen.SCANNER -> ScannerScreen(vm)
             Screen.BROWSER -> {}
         }
         if (!locked) {
@@ -175,6 +189,7 @@ fun BrowserScreen(vm: BrowserViewModel) {
             ctxMenu?.let { ContextSheet(it, vm) { link -> shareText(ctx, link) } }
             if (showSiteInfo && tab != null) SiteInfoSheet(tab, vm) { showSiteInfo = false }
             if (translateDialog && tab != null) TranslateDialog(tab, s.translateLang, vm) { translateDialog = false }
+            if (qrDialog && tab != null && tab.hasContent) QrCodeDialog(tab.url) { qrDialog = false }
         }
         if (locked) {
             BackHandler { (ctx as? android.app.Activity)?.moveTaskToBack(true) }
@@ -184,7 +199,7 @@ fun BrowserScreen(vm: BrowserViewModel) {
 }
 
 @Composable
-private fun BrowserMenu(vm: BrowserViewModel, tab: com.wyrix.browser.tabs.TabState?, privateMode: Boolean, onShare: (String) -> Unit, onTranslate: () -> Unit) {
+private fun BrowserMenu(vm: BrowserViewModel, tab: com.wyrix.browser.tabs.TabState?, privateMode: Boolean, onShare: (String) -> Unit, onTranslate: () -> Unit, onQr: () -> Unit) {
     val ctx = LocalContext.current
     var open by remember { mutableStateOf(false) }
     IconButton(onClick = { open = true }) { Icon(Icons.Filled.MoreVert, "More options") }
@@ -201,9 +216,12 @@ private fun BrowserMenu(vm: BrowserViewModel, tab: com.wyrix.browser.tabs.TabSta
         Item("Reload without cache", hasPage) { vm.hardReload() }
         Item("Reader mode", hasPage && tab?.url?.startsWith("https://") == true) { vm.openReader() }
         Item("Translate page…", hasPage) { onTranslate() }
+        Item("Share as QR code", hasPage) { onQr() }
         Item("Saved articles") { vm.openSavedList() }
         Item("Add to home shortcuts", hasPage) { vm.addCurrentAsShortcut() }
         HorizontalDivider()
+        Item("Scan QR code") { vm.openScreen(Screen.SCANNER) }
+        Item("Passwords") { vm.openScreen(Screen.PASSWORDS) }
         Item("Bookmarks") { vm.openScreen(Screen.BOOKMARKS) }
         Item("History") { vm.openScreen(Screen.HISTORY) }
         Item("Downloads") { vm.openScreen(Screen.DOWNLOADS) }

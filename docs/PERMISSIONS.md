@@ -4,7 +4,8 @@
 |---|---|---|
 | `INTERNET` | Load web pages | Always |
 | `ACCESS_NETWORK_STATE` | Used by the engine/DownloadManager to detect connectivity | Always |
-| `CAMERA`, `RECORD_AUDIO`, `MODIFY_AUDIO_SETTINGS` | Web camera/microphone (WebRTC) | Only after a page asks **and** the user taps Allow, then the Android runtime dialog |
+| `CAMERA` | QR/barcode scanner screen (on-device decoding), and web video calls | Scanner: only when you open it and tap Allow. Web: only after a page asks and you allow |
+| `RECORD_AUDIO`, `MODIFY_AUDIO_SETTINGS` | Web microphone (WebRTC) | Only after a page asks **and** the user taps Allow, then the Android runtime dialog |
 | `USE_BIOMETRIC` | Optional fingerprint/face/PIN lock for the browser and private tabs | Only when you enable app lock; the OS handles all biometric data |
 | `ACCESS_FINE_LOCATION`, `ACCESS_COARSE_LOCATION` | Web geolocation | Same two-step consent |
 

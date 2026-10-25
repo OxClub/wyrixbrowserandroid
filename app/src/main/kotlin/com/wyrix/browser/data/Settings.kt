@@ -65,6 +65,12 @@ data class Settings(
     val readerScale: Int = 100,
     val readerSerif: Boolean = true,
     val translateLang: String = "",
+    val saveLogins: Boolean = true,
+    val autofillLogins: Boolean = true,
+    val autofillRequiresUnlock: Boolean = false,
+    val neverSaveHosts: Set<String> = emptySet(),
+    /** One of HomeBackgrounds ids: none, aurora, dusk, mesh, topo, grid, stars, custom. */
+    val homeBackground: String = "aurora",
 )
 
 object Keys {
@@ -106,6 +112,11 @@ object Keys {
     val READER_SCALE = intPreferencesKey("reader_scale")
     val READER_SERIF = booleanPreferencesKey("reader_serif")
     val TRANSLATE_LANG = stringPreferencesKey("translate_lang")
+    val SAVE_LOGINS = booleanPreferencesKey("save_logins")
+    val AUTOFILL_LOGINS = booleanPreferencesKey("autofill_logins")
+    val AUTOFILL_UNLOCK = booleanPreferencesKey("autofill_requires_unlock")
+    val NEVER_SAVE_HOSTS = stringSetPreferencesKey("never_save_hosts")
+    val HOME_BACKGROUND = stringPreferencesKey("home_background")
 
     val APPEARANCE: List<Preferences.Key<*>> = listOf(THEME, TRUE_BLACK, ACCENT, HIGH_CONTRAST, REDUCED_MOTION, TOOLBAR, TAB_LAYOUT, HOME_LAYOUT)
 }
@@ -182,6 +193,10 @@ class SettingsStore(private val context: Context) {
         }
     }
 
+    suspend fun addNeverSaveHost(host: String) {
+        context.settingsDataStore.edit { it[Keys.NEVER_SAVE_HOSTS] = (it[Keys.NEVER_SAVE_HOSTS].orEmpty() + host).take(500).toSet() }
+    }
+
     suspend fun setPermissionResetPending(host: String, pending: Boolean) {
         context.settingsDataStore.edit {
             val cur = it[Keys.SITE_PERM_RESET].orEmpty()
@@ -238,6 +253,11 @@ class SettingsStore(private val context: Context) {
                 readerScale = (p[Keys.READER_SCALE] ?: d.readerScale).coerceIn(70, 220),
                 readerSerif = p[Keys.READER_SERIF] ?: d.readerSerif,
                 translateLang = p[Keys.TRANSLATE_LANG] ?: d.translateLang,
+                saveLogins = p[Keys.SAVE_LOGINS] ?: d.saveLogins,
+                autofillLogins = p[Keys.AUTOFILL_LOGINS] ?: d.autofillLogins,
+                autofillRequiresUnlock = p[Keys.AUTOFILL_UNLOCK] ?: d.autofillRequiresUnlock,
+                neverSaveHosts = p[Keys.NEVER_SAVE_HOSTS] ?: d.neverSaveHosts,
+                homeBackground = p[Keys.HOME_BACKGROUND] ?: d.homeBackground,
             )
         }
     }

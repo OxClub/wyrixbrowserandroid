@@ -50,7 +50,12 @@ Legend: **Implemented** = code exists and is wired into the UI, *untested on dev
 | Address bar quick actions | Implemented (0.2.0) | Long-press for copy/share/paste-and-go; search-engine chips while typing; clipboard read only when you tap Paste and go |
 | Toolbar long-press actions | Implemented (0.2.0) | Back: History. Home: new tab. Tabs: new/private/close/reopen. Reload: hard reload |
 | Bookmark move-to-folder, downloads filters/cancel/copy-link, recently visited & saved-articles home sections | Implemented (0.2.0) | |
-| Find in page, extensions, sync, password manager, autofill | Not implemented | Out of scope |
+| Password manager (0.3.0) | Implemented | Encrypted vault (AES-256-GCM, non-exportable Android Keystore key), generator, strength/reuse warnings, CSV import/export, biometric-gated reveal/copy/export, 30 s clipboard clearing. Saves and fills website logins through GeckoView's login-storage API (exact-host matching only). **Never used on a real device yet** |
+| QR / barcode scanner (0.3.0) | Implemented | CameraX + ZXing (no Google Play Services, works on Fire devices). Scans live or from a photo; shows what a code contains and never opens anything without confirmation. Also shows a QR code for the current page |
+| Home backgrounds (0.3.0) | Implemented | 6 original generated designs + your own photo (copied privately, metadata stripped). No stock photography is bundled |
+| Launcher/store icons (0.3.0) | Implemented | New adaptive icon background, Play and Amazon icon sizes and a 1024x500 graphic in `store-assets/` |
+| Signed AAB (Play) + APK (Amazon) pipeline (0.3.0) | Implemented | `release.yml`; needs your keystore secrets; builds have **not** been produced or tested yet |
+| Find in page, extensions, sync, autofill for non-login data | Not implemented | Out of scope |
 | Split view, picture-in-picture, tablet-specific layouts | Not implemented | |
 | Localization | Not implemented | UI strings are English literals in Compose; only `app_name` is a resource |
 | Accessibility | Partial | Content descriptions, 48dp targets, high-contrast option. No TalkBack pass was possible |

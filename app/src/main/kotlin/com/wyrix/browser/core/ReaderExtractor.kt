@@ -101,12 +101,8 @@ object ReaderExtractor {
 
     fun extract(html: String, url: String): ReaderArticle? {
         if (html.isBlank()) return null
-        val src = if (html.length > MAX_HTML_CHARS) {
-          html.take(MAX_HTML_CHARS)
-      } else {
-          html
-      }
-      val title = (TITLE_OG.find(src) ?: TITLE_OG2.find(src))?.groupValues?.get(1)?.let { textOf(it) }?.takeIf { it.isNotBlank() }
+        val src = if (html.length > MAX_HTML_CHARS) html.take(MAX_HTML_CHARS) else html
+        val title = (TITLE_OG.find(src) ?: TITLE_OG2.find(src))?.groupValues?.get(1)?.let { textOf(it) }?.takeIf { it.isNotBlank() }
             ?: TITLE_TAG.find(src)?.groupValues?.get(1)?.let { textOf(it) }?.takeIf { it.isNotBlank() }
             ?: H1.find(src)?.groupValues?.get(1)?.let { textOf(it) }.orEmpty()
         val site = SITE_OG.find(src)?.groupValues?.get(1)?.let { textOf(it) }?.takeIf { it.isNotBlank() } ?: (UrlTools.hostOf(url)?.removePrefix("www.") ?: "")
@@ -126,11 +122,7 @@ object ReaderExtractor {
             val tag = m.groupValues[1].lowercase()
             val inner = m.groupValues[2]
             val text = textOf(inner)
-            if (text.isEmpty()) continue
-              if (text == last) {
-                  last = ""
-                  continue
-              }
+            if (text.isEmpty() || text == last) continue
             val linkChars = ANCHOR.findAll(inner).sumOf { textOf(it.groupValues[1]).length }
             val linkHeavy = text.isNotEmpty() && linkChars.toDouble() / text.length > 0.5 && text.length < 200
             when (tag) {

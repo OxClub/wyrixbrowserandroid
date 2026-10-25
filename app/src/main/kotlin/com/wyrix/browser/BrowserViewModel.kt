@@ -12,6 +12,9 @@ import com.wyrix.browser.core.SearchEngines
 import com.wyrix.browser.core.UrlParser
 import com.wyrix.browser.core.UrlTools
 import com.wyrix.browser.core.BookmarkHtml
+import com.wyrix.browser.core.QrClassifier
+import com.wyrix.browser.core.QrContent
+import com.wyrix.browser.core.LoginCsv
 import com.wyrix.browser.core.ReaderArticle
 import com.wyrix.browser.core.ReaderExtractor
 import com.wyrix.browser.core.TranslateLanguages
@@ -24,7 +27,7 @@ import org.mozilla.geckoview.GeckoSession
 import org.mozilla.geckoview.GeckoView
 import java.util.UUID
 
-enum class Screen { BROWSER, TABS, BOOKMARKS, HISTORY, DOWNLOADS, SETTINGS, ABOUT, READER, SAVED }
+enum class Screen { BROWSER, TABS, BOOKMARKS, HISTORY, DOWNLOADS, SETTINGS, ABOUT, READER, SAVED, PASSWORDS, SCANNER }
 
 sealed interface ReaderState {
     data object Idle : ReaderState
@@ -93,6 +96,18 @@ class BrowserViewModel(private val app: WyrixApp) : ViewModel() {
     private val _saved = MutableStateFlow<List<SavedArticleMeta>>(emptyList())
     val savedArticles: StateFlow<List<SavedArticleMeta>> = _saved.asStateFlow()
     private var readerFromSaved = false
+    // ---- password vault + QR ----
+    val vaultState: StateFlow<VaultState> = c.vault.state
+    private var vaultUnlockedUntil = 0L
+    private val unlockWaiters = ArrayList<(Boolean) -> Unit>()
+    private val _unlockRequests = MutableSharedFlow<Unit>(extraBufferCapacity = 2)
+    /** Emits when something (autofill) needs the user to authenticate; the UI shows the prompt and calls [completeUnlock]. */
+    val unlockRequests: SharedFlow<Unit> = _unlockRequests.asSharedFlow()
+    private val _scanResult = MutableStateFlow<QrContent?>(null)
+    val scanResult: StateFlow<QrContent?> = _scanResult.asStateFlow()
+    private val _bgVersion = MutableStateFlow(0)
+    val homeBackgroundVersion: StateFlow<Int> = _bgVersion.asStateFlow()
+
     private val _appLocked = MutableStateFlow(false)
     private val _privateLocked = MutableStateFlow(false)
     private var backgroundedAt = 0L
@@ -115,6 +130,10 @@ class BrowserViewModel(private val app: WyrixApp) : ViewModel() {
         sm.isTabSelected = { it == _tabs.value.selectedId }
         sm.trackingFor = { desiredTracking(it, null) }
         refreshSaved()
+        c.loginHooks.settings = { settings.value }
+        c.loginHooks.isUnlocked = { isVaultUnlocked() }
+        c.loginHooks.requestUnlock = { cb -> unlockWaiters += cb; if (unlockWaiters.size == 1) _unlockRequests.tryEmit(Unit) }
+        viewModelScope.launch { c.vault.refresh() }
         viewModelScope.launch { sm.events.collect { onEvent(it) } }
         viewModelScope.launch {
             settings.filterNotNull().map { it.protection }.distinctUntilChanged().collect { c.engine.applyProtection(it) }
@@ -213,6 +232,11 @@ class BrowserViewModel(private val app: WyrixApp) : ViewModel() {
                     if (prepared == null) toast("Blocked a link this browser can't open")
                     else _requests.update { it + PromptRequest.External(r.tabId, r.uri) { ok -> if (ok) externalIntents.tryEmit(prepared) } }
                 }
+                is PromptRequest.LoginSave -> {
+                    val s = settings.value
+                    if (s == null || !s.saveLogins || r.host in s.neverSaveHosts) r.result(PromptRequest.LoginChoice.NOT_NOW)
+                    else _requests.update { it + r }
+                }
                 else -> _requests.update { it + r }
             }
         }
@@ -236,6 +260,80 @@ class BrowserViewModel(private val app: WyrixApp) : ViewModel() {
             is PromptRequest.Permission -> r.result(allow)
             is PromptRequest.External -> r.result(allow)
             is PromptRequest.FilePick -> r.result(null)
+            is PromptRequest.LoginSave -> r.result(if (allow) PromptRequest.LoginChoice.SAVE else PromptRequest.LoginChoice.NOT_NOW)
+            is PromptRequest.LoginSelect -> r.result(null)
+        }
+    }
+    fun resolveLoginSave(r: PromptRequest.LoginSave, choice: PromptRequest.LoginChoice) {
+        _requests.update { it - r }
+        if (choice == PromptRequest.LoginChoice.NEVER) viewModelScope.launch { store.addNeverSaveHost(r.host) }
+        r.result(choice)
+        if (choice == PromptRequest.LoginChoice.SAVE) toast("Password saved")
+    }
+    fun resolveLoginSelect(r: PromptRequest.LoginSelect, index: Int?) { _requests.update { it - r }; r.result(index) }
+
+    // ---- vault ----------------------------------------------------------------------------------
+    fun isVaultUnlocked(): Boolean = now() < vaultUnlockedUntil
+    fun markVaultUnlocked() { vaultUnlockedUntil = now() + 120_000 }
+    fun completeUnlock(ok: Boolean) {
+        if (ok) markVaultUnlocked()
+        val waiting = unlockWaiters.toList(); unlockWaiters.clear()
+        waiting.forEach { it(ok) }
+    }
+    fun saveLogin(origin: String, username: String, password: String, note: String, id: String?) {
+        viewModelScope.launch {
+            val ok = c.vault.upsert(origin.trim(), null, username.trim(), password, note, id)
+            toast(if (ok) "Saved" else "Couldn't save. Check the web address and password, or the vault may be unreadable")
+        }
+    }
+    fun deleteLogin(id: String) { viewModelScope.launch { c.vault.delete(id) } }
+    fun resetVault() { viewModelScope.launch { c.vault.resetEverything(); toast("Vault erased") } }
+    suspend fun vaultItems() = c.vault.all()
+    fun importPasswords(context: Context, uri: Uri) = viewModelScope.launch {
+        val text = withContext(Dispatchers.IO) {
+            runCatching {
+                context.contentResolver.openInputStream(uri)?.use { s ->
+                    val buf = java.io.ByteArrayOutputStream(); val chunk = ByteArray(16 * 1024); var total = 0
+                    while (true) { val n = s.read(chunk); if (n < 0) break; total += n; if (total > LoginCsv.MAX_BYTES) return@runCatching null; buf.write(chunk, 0, n) }
+                    buf.toString(Charsets.UTF_8.name())
+                }
+            }.getOrNull()
+        }
+        if (text == null) { toast("Couldn't read that file (max 2 MB)"); return@launch }
+        val parsed = LoginCsv.parse(text)
+        if (parsed.logins.isEmpty()) { toast("No usable passwords found in that file"); return@launch }
+        val (added, updated) = c.vault.importCsv(parsed.logins)
+        toast("Imported $added new, $updated updated, ${parsed.skipped} skipped" + if (parsed.truncated) " (row limit reached)" else "")
+    }
+    fun exportPasswords(context: Context, uri: Uri) = viewModelScope.launch {
+        val csv = c.vault.exportCsv()
+        val ok = withContext(Dispatchers.IO) { runCatching { context.contentResolver.openOutputStream(uri)?.use { it.write(csv.toByteArray(Charsets.UTF_8)) } != null }.getOrDefault(false) }
+        toast(if (ok) "Exported. This file is NOT encrypted: delete it when you're done" else "Export failed")
+    }
+    /** Copies a secret with the "sensitive" clipboard flag and clears it again after 30 seconds if unchanged. */
+    fun copySensitive(context: Context, text: String, what: String) {
+        val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+        val clip = android.content.ClipData.newPlainText(what, text)
+        clip.description.extras = android.os.PersistableBundle().apply { putBoolean("android.content.extra.IS_SENSITIVE", true) }
+        cm.setPrimaryClip(clip)
+        toast("$what copied. Clears in 30 seconds")
+        c.appScope.launch {
+            delay(30_000)
+            val cur = runCatching { cm.primaryClip?.getItemAt(0)?.text?.toString() }.getOrNull()
+            if (cur == text) runCatching { cm.clearPrimaryClip() }
+        }
+    }
+
+    // ---- QR scanner -----------------------------------------------------------------------------
+    fun onScanned(text: String) { _scanResult.value = QrClassifier.classify(text) }
+    fun dismissScan() { _scanResult.value = null }
+    fun openScanned(url: String) { _scanResult.value = null; _screen.value = Screen.BROWSER; openInNewTab(url, false) }
+
+    // ---- home background ------------------------------------------------------------------------
+    fun setHomeBackgroundPhoto(context: Context, uri: Uri) {
+        viewModelScope.launch {
+            if (HomeBackgroundStore.save(context, uri)) { _bgVersion.update { it + 1 }; store.set(Keys.HOME_BACKGROUND, "custom") }
+            else toast("Couldn't use that image")
         }
     }
     fun resolveFile(r: PromptRequest.FilePick, uris: List<Uri>?) { _requests.update { it - r }; r.result(uris) }
@@ -710,7 +808,7 @@ class BrowserViewModel(private val app: WyrixApp) : ViewModel() {
             if (s.lockPrivate) _privateLocked.value = true
         }
     }
-    fun unlock() { _appLocked.value = false; _privateLocked.value = false }
+    fun unlock() { _appLocked.value = false; _privateLocked.value = false; markVaultUnlocked() }
 
     // ---- lifecycle ---------------------------------------------------------------------------
     private fun flushBlocked() { val n = blockedUnflushed; blockedUnflushed = 0; if (n > 0) viewModelScope.launch { store.addBlocked(n.toLong()) } }

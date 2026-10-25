@@ -29,6 +29,14 @@ sealed interface PromptRequest {
     data class External(override val tabId: String, val uri: String, val result: (Boolean) -> Unit) : PromptRequest {
         override fun cancel() = result(false)
     }
+    enum class LoginChoice { SAVE, NOT_NOW, NEVER }
+    data class LoginSave(override val tabId: String, val host: String, val username: String, val result: (LoginChoice) -> Unit) : PromptRequest {
+        override fun cancel() = result(LoginChoice.NOT_NOW)
+    }
+    /** [index] is the chosen option, or null if the user declined to fill. */
+    data class LoginSelect(override val tabId: String, val host: String, val usernames: List<String>, val result: (Int?) -> Unit) : PromptRequest {
+        override fun cancel() = result(null)
+    }
 }
 
 data class ContextMenuInfo(val tabId: String, val linkUri: String?, val imageUri: String?, val isPrivate: Boolean)

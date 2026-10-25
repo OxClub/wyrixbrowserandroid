@@ -17,6 +17,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextAlign
@@ -33,7 +34,7 @@ import com.wyrix.browser.ui.common.*
 import com.wyrix.browser.ui.theme.primary
 import com.wyrix.browser.ui.theme.secondary
 
-@OptIn(ExperimentalFoundationApi::class)
+@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(vm: BrowserViewModel, onStartEdit: () -> Unit) {
     val s by vm.settings.collectAsStateWithLifecycle()
@@ -50,11 +51,15 @@ fun HomeScreen(vm: BrowserViewModel, onStartEdit: () -> Unit) {
     var customize by remember { mutableStateOf(false) }
     val limit = when (st.homeLayout) { HomeLayout.COMPACT -> 4; HomeLayout.STANDARD -> 8; HomeLayout.EXPANDED -> 12 }
 
-    Box(
-        Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).background(
-            Brush.verticalGradient(listOf(st.accent.primary().copy(alpha = if (privateMode) 0.22f else 0.12f), MaterialTheme.colorScheme.background, MaterialTheme.colorScheme.background)),
-        ),
-    ) {
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    val bgVersion by vm.homeBackgroundVersion.collectAsStateWithLifecycle()
+    val photo by produceState<androidx.compose.ui.graphics.ImageBitmap?>(null, st.homeBackground, bgVersion) {
+        value = if (st.homeBackground == HomeBackgrounds.CUSTOM) com.wyrix.browser.data.HomeBackgroundStore.load(ctx)?.asImageBitmap() else null
+    }
+    val surfaceBg = MaterialTheme.colorScheme.background
+
+    Box(Modifier.fillMaxSize().background(surfaceBg)) {
+        HomeBackdrop(if (privateMode) "stars" else st.homeBackground, st.accent, photo, surfaceBg)
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(top = 24.dp, bottom = 24.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 WyrixEmblem(40.dp, st.accent)
@@ -73,6 +78,11 @@ fun HomeScreen(vm: BrowserViewModel, onStartEdit: () -> Unit) {
                 }
             }
 
+            Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                AssistChip(onClick = { vm.openScreen(Screen.SCANNER) }, label = { Text("Scan QR") }, leadingIcon = { Icon(WyrixIcons.Reader, null, Modifier.size(16.dp)) })
+                AssistChip(onClick = { vm.openScreen(Screen.PASSWORDS) }, label = { Text("Passwords") }, leadingIcon = { Icon(WyrixIcons.Lock, null, Modifier.size(16.dp)) })
+                AssistChip(onClick = { vm.openScreen(Screen.DOWNLOADS) }, label = { Text("Downloads") }, leadingIcon = { Icon(WyrixIcons.Download, null, Modifier.size(16.dp)) })
+            }
             if (st.showShortcuts) {
                 SectionHeader("Shortcuts", Modifier.padding(horizontal = 0.dp))
                 val items = shortcuts.take(limit)

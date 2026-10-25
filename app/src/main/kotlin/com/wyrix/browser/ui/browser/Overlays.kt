@@ -102,6 +102,28 @@ fun PromptHost(vm: BrowserViewModel) {
             "You can change this later from the site details sheet.", "Allow", { vm.resolveRequest(r, true) }, { vm.resolveRequest(r, false) }, "Don't allow")
         is PromptRequest.External -> ConfirmDialog("Open another app?", "This page wants to open a link in another app. Only continue if you expected this.",
             "Open", { vm.resolveRequest(r, true) }, { vm.resolveRequest(r, false) })
+        is PromptRequest.LoginSave -> AlertDialog(
+            onDismissRequest = { vm.resolveLoginSave(r, PromptRequest.LoginChoice.NOT_NOW) },
+            title = { Text("Save password?") },
+            text = { Text("Save the login for ${r.host.ifBlank { "this site" }}${if (r.username.isNotBlank()) " (${r.username})" else ""}? It is stored encrypted on this device and can be filled in next time.") },
+            confirmButton = { TextButton(onClick = { vm.resolveLoginSave(r, PromptRequest.LoginChoice.SAVE) }) { Text("Save") } },
+            dismissButton = {
+                Row {
+                    TextButton(onClick = { vm.resolveLoginSave(r, PromptRequest.LoginChoice.NEVER) }) { Text("Never for this site") }
+                    TextButton(onClick = { vm.resolveLoginSave(r, PromptRequest.LoginChoice.NOT_NOW) }) { Text("Not now") }
+                }
+            },
+        )
+        is PromptRequest.LoginSelect -> AlertDialog(
+            onDismissRequest = { vm.resolveLoginSelect(r, null) }, title = { Text("Fill saved login") },
+            text = {
+                Column {
+                    Text(r.host, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    r.usernames.forEachIndexed { i, name -> ListItem(headlineContent = { Text(name) }, modifier = Modifier.clickable { vm.resolveLoginSelect(r, i) }, colors = ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent)) }
+                }
+            },
+            confirmButton = { TextButton(onClick = { vm.resolveLoginSelect(r, null) }) { Text("Cancel") } },
+        )
         is PromptRequest.FilePick -> {
             val single = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> vm.resolveFile(r, uri?.let { listOf(it) }) }
             val multi = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris -> vm.resolveFile(r, uris.ifEmpty { null }) }

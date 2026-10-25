@@ -15,6 +15,9 @@ import java.util.WeakHashMap
  * the process can start without paying for engine start-up until a page is actually needed.
  */
 class EngineHolder(private val app: Application) {
+    /** Set before the runtime is first touched; connects Gecko's login autofill/save to our encrypted vault. */
+    var loginStorage: org.mozilla.geckoview.Autocomplete.StorageDelegate? = null
+
     val runtime: GeckoRuntime by lazy {
         GeckoRuntime.create(
             app,
@@ -23,7 +26,12 @@ class EngineHolder(private val app: Application) {
                 .remoteDebuggingEnabled(false)
                 .consoleOutput(false)
                 .build(),
-        )
+        ).also { rt ->
+            loginStorage?.let {
+                rt.setAutocompleteStorageDelegate(it)
+                rt.settings.setLoginAutofillEnabled(true) // Gecko only detects/offers login forms when this is on
+            }
+        }
     }
 
     fun applyProtection(level: ProtectionLevel) {

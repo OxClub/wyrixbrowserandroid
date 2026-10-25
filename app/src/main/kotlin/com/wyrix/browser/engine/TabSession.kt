@@ -5,6 +5,7 @@ import com.wyrix.browser.core.LoadDecision
 import com.wyrix.browser.core.LoadPolicy
 import com.wyrix.browser.tabs.ErrorKind
 import org.mozilla.geckoview.AllowOrDeny
+import org.mozilla.geckoview.Autocomplete
 import org.mozilla.geckoview.ContentBlocking
 import org.mozilla.geckoview.GeckoResult
 import org.mozilla.geckoview.GeckoRuntime
@@ -211,6 +212,34 @@ class TabSession(
                 r.complete(
                     if (ok) prompt.confirm(GeckoSession.PromptDelegate.ButtonPrompt.Type.POSITIVE) else prompt.dismiss(),
                 )
+            }))
+            return r
+        }
+
+        override fun onLoginSave(session: GeckoSession, request: GeckoSession.PromptDelegate.AutocompleteRequest<Autocomplete.LoginSaveOption>): GeckoResult<GeckoSession.PromptDelegate.PromptResponse>? {
+            val option = request.options.firstOrNull()
+            val entry = option?.value
+            // Private tabs never offer to remember anything.
+            if (isPrivate || option == null || entry == null) return GeckoResult.fromValue(request.dismiss())
+            val r = GeckoResult<GeckoSession.PromptDelegate.PromptResponse>()
+            val host = UrlTools.hostOf(entry.origin.orEmpty()) ?: entry.origin.orEmpty().take(60)
+            emit(TabEvent.Request(id, PromptRequest.LoginSave(id, host, entry.username.orEmpty()) { choice ->
+                when (choice) {
+                    PromptRequest.LoginChoice.SAVE -> r.complete(request.confirm(option))
+                    else -> r.complete(request.dismiss())
+                }
+            }))
+            return r
+        }
+
+        override fun onLoginSelect(session: GeckoSession, request: GeckoSession.PromptDelegate.AutocompleteRequest<Autocomplete.LoginSelectOption>): GeckoResult<GeckoSession.PromptDelegate.PromptResponse>? {
+            val options = request.options
+            if (options.isEmpty()) return GeckoResult.fromValue(request.dismiss())
+            val r = GeckoResult<GeckoSession.PromptDelegate.PromptResponse>()
+            val names = options.map { it.value.username.orEmpty().ifBlank { "(no username)" } }
+            val host = UrlTools.hostOf(options[0].value.origin.orEmpty()) ?: ""
+            emit(TabEvent.Request(id, PromptRequest.LoginSelect(id, host, names) { idx ->
+                r.complete(if (idx != null && idx in options.indices) request.confirm(options[idx]) else request.dismiss())
             }))
             return r
         }

@@ -28,7 +28,14 @@ class AppContainer(app: Application) {
     val downloadDao = db.downloads()
     val reader = com.wyrix.browser.data.ReaderStore(app)
     val engine = EngineHolder(app)
+    val vault = com.wyrix.browser.data.VaultStore(app)
+    val loginHooks = com.wyrix.browser.engine.LoginHooks()
     val sessions = SessionManager(engine)
+
+    init {
+        // Must happen before anything touches engine.runtime (it is created lazily).
+        engine.loginStorage = com.wyrix.browser.engine.LoginStorageBridge(vault, loginHooks, appScope)
+    }
 }
 
 class WyrixApp : Application() {
