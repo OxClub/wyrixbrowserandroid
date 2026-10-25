@@ -50,7 +50,7 @@ class ReaderExtractorTest {
         assertEquals(3, a.blocks.size); assertTrue(a.minutes >= 1); assertTrue(a.wordCount > 30)
     }
     @Test fun hugeInputIsBounded() {
-        val html = page("<article>" + "<p>$para</p>".repeat(200_000) + "</article>")
+        val html = page("<article>" + (1..200_000).joinToString("") { "<p>$para $it</p>" } + "</article>")
         val a = ReaderExtractor.extract(html, "https://e.com")
         assertNotNull(a); assertTrue(a!!.blocks.size <= 1500)
     }
