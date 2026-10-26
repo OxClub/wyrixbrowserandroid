@@ -168,6 +168,13 @@ class TabSession(
     private fun permissionDelegate() = object : GeckoSession.PermissionDelegate {
         override fun onContentPermissionRequest(session: GeckoSession, perm: Perm): GeckoResult<Int>? {
             val what = permissionLabel(perm.permission)
+            // Routine media permissions are decided silently (browser-standard policy); only real privacy prompts ask the user.
+            when (perm.permission) {
+                GeckoSession.PermissionDelegate.PERMISSION_AUTOPLAY_INAUDIBLE -> return GeckoResult.fromValue(Perm.VALUE_ALLOW)
+                GeckoSession.PermissionDelegate.PERMISSION_AUTOPLAY_AUDIBLE -> return GeckoResult.fromValue(Perm.VALUE_DENY)
+                GeckoSession.PermissionDelegate.PERMISSION_PERSISTENT_STORAGE -> return GeckoResult.fromValue(Perm.VALUE_ALLOW)
+                GeckoSession.PermissionDelegate.PERMISSION_MEDIA_KEY_SYSTEM_ACCESS -> return GeckoResult.fromValue(Perm.VALUE_ALLOW)
+            }
             // Notifications aren't supported (no push/notification delegate): deny explicitly rather than pretend.
             if (what == null || perm.permission == GeckoSession.PermissionDelegate.PERMISSION_DESKTOP_NOTIFICATION) {
                 return GeckoResult.fromValue(Perm.VALUE_DENY)
