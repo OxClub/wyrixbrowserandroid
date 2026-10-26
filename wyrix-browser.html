@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Wyrix Browser</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;700;800&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#f4f6fb;--surface:#ffffff;--ink:#0d1526;--muted:#55627a;--line:#dde3ee;--accent:#3a5bff;--accent2:#12c4b4;--hero:#0d1526;--hero-ink:#f1f5ff;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0a111f;--surface:#111b2e;--ink:#eaf0ff;--muted:#9aa8c4;--line:#22304a;--accent:#7c93ff;--accent2:#3fe0d0;--hero:#060b16}}
+:root[data-theme="dark"]{--bg:#0a111f;--surface:#111b2e;--ink:#eaf0ff;--muted:#9aa8c4;--line:#22304a;--accent:#7c93ff;--accent2:#3fe0d0;--hero:#060b16}
+html{scroll-padding-top:env(safe-area-inset-top,0px);scroll-behavior:smooth}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.7 "DM Sans",system-ui,-apple-system,"Segoe UI",sans-serif}
+a{color:var(--accent)}
+.wrap{max-width:1040px;margin:0 auto;padding:0 22px}
+header{background:var(--hero);color:var(--hero-ink)}
+nav{display:flex;align-items:center;justify-content:space-between;padding:20px 0}
+.logo{font:800 22px/1 Sora,sans-serif;letter-spacing:-.02em;color:var(--hero-ink);text-decoration:none}
+.logo i{display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--accent2);margin-left:4px}
+nav ul{display:flex;gap:22px;list-style:none;margin:0;padding:0}
+nav a{color:#b9c6e6;text-decoration:none;font-size:15px;font-weight:500}
+nav a:hover,nav a:focus-visible{color:#fff}
+.hero{display:grid;gap:44px;padding:48px 0 72px;align-items:center}
+@media(min-width:860px){.hero{grid-template-columns:1.05fr .95fr;padding:72px 0 96px}}
+h1{font:800 clamp(38px,8vw,64px)/1.04 Sora,sans-serif;letter-spacing:-.035em;margin:0 0 20px}
+.sub{font-size:19px;color:#b9c6e6;max-width:30em;margin:0 0 30px}
+.btns{display:flex;gap:12px;flex-wrap:wrap}
+.btn{display:inline-block;padding:13px 22px;border-radius:10px;font-weight:700;text-decoration:none;font-size:15px}
+.btn.p{background:var(--accent2);color:#04201d}
+.btn.s{border:1px solid #33456b;color:var(--hero-ink)}
+.btn:focus-visible,a:focus-visible{outline:3px solid var(--accent2);outline-offset:3px}
+.win{background:#16213a;border:1px solid #2a3a5c;border-radius:16px;overflow:hidden;box-shadow:0 30px 70px -30px rgba(0,0,0,.7)}
+.tabs{display:flex;gap:6px;padding:12px 12px 0;background:#0f182c}
+.tab{padding:9px 16px;border-radius:10px 10px 0 0;font-size:13px;color:#8fa0c4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tab.on{background:#16213a;color:#fff}
+.bar{display:flex;gap:10px;align-items:center;padding:12px;background:#16213a}
+.url{flex:1;background:#0d1526;border-radius:999px;padding:9px 16px;font-size:13px;color:#9fb0d6;border:1px solid #2a3a5c}
+.dot{width:26px;height:26px;border-radius:50%;background:#22304f}
+.page{padding:26px 22px 34px;display:grid;gap:12px}
+.l{height:12px;border-radius:6px;background:#22304f}
+.l.a{width:62%;height:20px;background:linear-gradient(90deg,var(--accent),var(--accent2))}
+.l.b{width:92%}.l.c{width:78%}.l.d{width:45%}
+section{padding:72px 0}
+h2{font:700 clamp(26px,5vw,36px)/1.15 Sora,sans-serif;letter-spacing:-.02em;margin:0 0 14px}
+.intro{color:var(--muted);max-width:34em;margin:0 0 40px;font-size:18px}
+.feat{display:grid;gap:0;border-top:1px solid var(--line)}
+@media(min-width:760px){.feat{grid-template-columns:repeat(3,1fr)}.feat div+div{border-left:1px solid var(--line)}}
+.feat div{padding:28px 0;border-bottom:1px solid var(--line)}
+@media(min-width:760px){.feat div{padding:28px 28px}.feat div:first-child{padding-left:0}}
+.feat h3{font:700 18px/1.3 Sora,sans-serif;margin:0 0 8px}
+.feat p{margin:0;color:var(--muted)}
+.policy{background:var(--surface);border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+.pgrid{display:grid;gap:28px}
+@media(min-width:860px){.pgrid{grid-template-columns:260px 1fr;gap:64px}}
+.pgrid aside p{color:var(--muted);font-size:15px;margin:0}
+.item{padding:0 0 22px;margin:0 0 22px;border-bottom:1px solid var(--line)}
+.item:last-child{border:0;margin:0;padding:0}
+.item h3{font:700 17px/1.3 Sora,sans-serif;margin:0 0 6px}
+.item p{margin:0;color:var(--muted);max-width:42em}
+.contact{text-align:left}
+.mail{font:700 clamp(20px,5vw,30px)/1.2 Sora,sans-serif;word-break:break-all}
+footer{padding:28px 0 40px;color:var(--muted);font-size:14px;border-top:1px solid var(--line)}
+</style>
+</head>
+<body>
+<header>
+<div class="wrap">
+<nav>
+<a class="logo" href="#top">Wyrix<i></i></a>
+<ul><li><a href="#features">Features</a></li><li><a href="#privacy">Privacy</a></li><li><a href="#contact">Contact</a></li></ul>
+</nav>
+<div class="hero" id="top">
+<div>
+<h1>A browser that stays out of your way.</h1>
+<p class="sub">Wyrix Browser is a fast, simple web browser for Android. Open tabs, search from the address bar, and keep your data on your own device.</p>
+<div class="btns"><a class="btn p" href="#features">See what it does</a><a class="btn s" href="#privacy">Read the privacy policy</a></div>
+</div>
+<div class="win" aria-hidden="true">
+<div class="tabs"><div class="tab on">New tab</div><div class="tab">Search</div><div class="tab">Wyrix</div></div>
+<div class="bar"><div class="dot"></div><div class="url">Search or type a web address</div><div class="dot"></div></div>
+<div class="page"><div class="l a"></div><div class="l b"></div><div class="l c"></div><div class="l b"></div><div class="l d"></div></div>
+</div>
+</div>
+</div>
+</header>
+
+<main>
+<section id="features">
+<div class="wrap">
+<h2>Everything you need to browse.</h2>
+<p class="intro">No clutter and no account to create. Install it and start browsing.</p>
+<div class="feat">
+<div><h3>Multiple tabs</h3><p>Keep several pages open and switch between them in one tap.</p></div>
+<div><h3>Search from the address bar</h3><p>Type a web address or a search and go straight to the result.</p></div>
+<div><h3>Your data stays with you</h3><p>History and settings are stored on your device, not on our servers.</p></div>
+</div>
+</div>
+</section>
+
+<section class="policy" id="privacy">
+<div class="wrap pgrid">
+<aside>
+<h2>Privacy Policy</h2>
+<p>Last updated: October 26, 2026</p>
+</aside>
+<div>
+<div class="item"><h3>Information we collect</h3><p>We do not collect, sell or share your personal information on our own servers. Wyrix Browser does not ask you to create an account.</p></div>
+<div class="item"><h3>Data stored on your device</h3><p>Like any browser, the app stores browsing history, cookies, cached files and settings on your device so it can work properly. This data stays on your device, and you can clear it at any time from the app or your phone’s settings.</p></div>
+<div class="item"><h3>Websites you visit</h3><p>When you open a website, that website may collect data under its own privacy policy. We do not control those websites.</p></div>
+<div class="item"><h3>Permissions</h3><p>The app needs internet access to load websites. Any other permission, such as storage for downloads, is used only for the feature it belongs to.</p></div>
+<div class="item"><h3>Children</h3><p>The app is not directed at children under 13, and we do not knowingly collect data from them.</p></div>
+<div class="item"><h3>Changes to this policy</h3><p>If we change this policy, we will update the date at the top of this section.</p></div>
+</div>
+</div>
+</section>
+
+<section class="contact" id="contact">
+<div class="wrap">
+<h2>Get in touch.</h2>
+<p class="intro">Questions about the app or this policy? Write to us.</p>
+<a class="mail" href="mailto:oxclub@proton.me">oxclub@proton.me</a>
+</div>
+</section>
+</main>
+
+<footer><div class="wrap">© 2026 Wyrix Browser</div></footer>
+</body>
+</html>
