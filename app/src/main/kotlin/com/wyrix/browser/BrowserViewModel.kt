@@ -655,7 +655,7 @@ class BrowserViewModel(private val app: WyrixApp) : ViewModel() {
         }
     }
     fun addShortcut(title: String, url: String, color: Int) = viewModelScope.launch {
-        if (!UrlTools.isWebUrl(url)) toast("Enter a full web address") else c.organization.addShortcut(title, url, color)
+        if (!UrlTools.isWebUrl(url)) toast("Enter a full web address") else if (shortcuts.value.any { UrlTools.normalize(it.url) == UrlTools.normalize(url) }) toast("Already in your shortcuts") else { c.organization.addShortcut(title, url, color); toast("Shortcut added") }
     }
     fun addCurrentAsShortcut() { _tabs.value.selected?.let { addShortcut(it.title, it.url, 0xFF5B8CFF.toInt()) } }
     fun updateShortcut(s: ShortcutEntity) = viewModelScope.launch { c.organization.updateShortcut(s) }

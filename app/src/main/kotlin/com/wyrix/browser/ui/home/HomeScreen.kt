@@ -65,7 +65,7 @@ fun HomeScreen(vm: BrowserViewModel, onStartEdit: () -> Unit) {
                 WyrixEmblem(40.dp, st.accent)
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
-                    Text(if (privateMode) "Private browsing" else "WYRIX", style = MaterialTheme.typography.titleLarge)
+                    Text(if (privateMode) "Private browsing" else "WYRIX BROWSER", style = MaterialTheme.typography.titleLarge)
                     Text(if (privateMode) "History, cookies and site data from private tabs aren't kept." else "Fast, private, yours.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 IconButton(onClick = { customize = true }) { Icon(Icons.Filled.Edit, "Customize home") }
