@@ -66,7 +66,7 @@ android {
     }
     packaging {
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
-        jniLibs { useLegacyPackaging = true } // compress native libs in the APK
+        jniLibs { useLegacyPackaging = false } // 16 KB page-size support
     }
     testOptions { unitTests.isReturnDefaultValues = true }
     sourceSets {
@@ -83,8 +83,8 @@ ksp { arg("room.schemaLocation", "$projectDir/schemas") }
 dependencies {
     implementation("org.mozilla.geckoview:$geckoArtifact:$geckoVersion")
 
+    implementation("androidx.fragment:fragment:1.8.9")
     implementation(libs.androidx.core.ktx)
-    implementation("androidx.fragment:fragment:1.8.6")
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)

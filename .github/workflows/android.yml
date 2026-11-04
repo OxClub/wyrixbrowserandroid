@@ -41,7 +41,7 @@ jobs:
           gradle-version: "8.11.1"
 
       - name: Resolve GeckoView release from official Mozilla Maven
-        run: bash tools/resolve-geckoview.sh && grep '^wyrix.geckoview' gradle.properties
+        run: bash tools/resolve-geckoview.sh --force && grep '^wyrix.geckoview' gradle.properties
 
       - name: Lint and unit tests
         run: gradle --no-daemon --stacktrace :app:lintDebug :app:testDebugUnitTest
