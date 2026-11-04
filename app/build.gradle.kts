@@ -84,6 +84,7 @@ dependencies {
     implementation("org.mozilla.geckoview:$geckoArtifact:$geckoVersion")
 
     implementation(libs.androidx.core.ktx)
+    implementation("androidx.fragment:fragment:1.8.6")
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)

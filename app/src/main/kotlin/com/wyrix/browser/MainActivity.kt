@@ -1,8 +1,11 @@
 package com.wyrix.browser
 
+import android.app.PictureInPictureParams
 import android.content.ComponentCallbacks2
 import android.content.Intent
+import android.os.Build
 import android.os.Bundle
+import android.util.Rational
 import android.view.KeyEvent
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
@@ -47,7 +50,7 @@ class MainActivity : ComponentActivity() {
                     if (secure) window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
                     else window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
                 } }
-                launch { vm.fullscreen.collect { applyFullscreen(it) } }
+                launch { vm.fullscreen.collect { applyFullscreen(it); updatePipParams(it) } }
             }
         }
         if (savedInstanceState == null) deliver(intent)
@@ -62,6 +65,25 @@ class MainActivity : ComponentActivity() {
     private fun deliver(i: Intent?) {
         i ?: return
         vm.handleIntent(i.action, i.dataString, i.getStringExtra(Intent.EXTRA_TEXT))
+    }
+
+    // Picture-in-picture: a full-screen web video keeps playing in a small window when you leave the app.
+    private fun pipParams(autoEnter: Boolean): PictureInPictureParams {
+        val b = PictureInPictureParams.Builder().setAspectRatio(Rational(16, 9))
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) b.setAutoEnterEnabled(autoEnter)
+        return b.build()
+    }
+
+    private fun updatePipParams(fullscreen: Boolean) {
+        runCatching { setPictureInPictureParams(pipParams(fullscreen)) }
+    }
+
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        // Android 12+ enters automatically (auto-enter); this covers Android 9-11.
+        if (vm.fullscreen.value && Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+            runCatching { enterPictureInPictureMode(pipParams(false)) }
+        }
     }
 
     private fun applyFullscreen(on: Boolean) {
