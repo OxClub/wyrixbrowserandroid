@@ -38,7 +38,7 @@ class TabSession(
     @Volatile private var latestState: GeckoSession.SessionState? = null
     @Volatile var mediaPlaying = false
     @Volatile private var keepPlaying = false
-    @Volatile private var media: GeckoSession.MediaSession? = null
+    @Volatile private var media: org.mozilla.geckoview.MediaSession? = null
 
     fun setKeepPlaying(on: Boolean) {
         keepPlaying = on
@@ -51,11 +51,11 @@ class TabSession(
         session.contentDelegate = contentDelegate()
         session.permissionDelegate = permissionDelegate()
         session.promptDelegate = promptDelegate()
-        session.mediaSessionDelegate = object : GeckoSession.MediaSession.Delegate {
-            override fun onActivated(session: GeckoSession, mediaSession: GeckoSession.MediaSession) { media = mediaSession }
-            override fun onDeactivated(session: GeckoSession, mediaSession: GeckoSession.MediaSession) { if (media === mediaSession) media = null; mediaPlaying = false }
-            override fun onPlay(session: GeckoSession, mediaSession: GeckoSession.MediaSession) { mediaPlaying = true }
-            override fun onPause(session: GeckoSession, mediaSession: GeckoSession.MediaSession) {
+        session.mediaSessionDelegate = object : org.mozilla.geckoview.MediaSession.Delegate {
+            override fun onActivated(session: GeckoSession, mediaSession: org.mozilla.geckoview.MediaSession) { media = mediaSession }
+            override fun onDeactivated(session: GeckoSession, mediaSession: org.mozilla.geckoview.MediaSession) { if (media === mediaSession) media = null; mediaPlaying = false }
+            override fun onPlay(session: GeckoSession, mediaSession: org.mozilla.geckoview.MediaSession) { mediaPlaying = true }
+            override fun onPause(session: GeckoSession, mediaSession: org.mozilla.geckoview.MediaSession) {
                 mediaPlaying = false
                 if (keepPlaying) mediaSession.play()
             }
