@@ -2,6 +2,7 @@
 # Needs repository secrets (docs/STORE_RELEASE.md): WYRIX_KEYSTORE_BASE64, WYRIX_KEYSTORE_PASSWORD, WYRIX_KEY_ALIAS, WYRIX_KEY_PASSWORD
 # Nothing is uploaded to any store automatically.
 name: Release (signed AAB + APK)
+run-name: "Release code ${{ github.event.inputs.version_code || 'auto' }} / name ${{ github.event.inputs.version_name || 'default' }}"
 
 on:
   workflow_dispatch:
