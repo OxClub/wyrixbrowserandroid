@@ -59,7 +59,7 @@ jobs:
           PY
 
       - name: Assemble debug APK
-        run: gradle --no-daemon --stacktrace :app:assembleDebug
+        run: gradle --no-daemon --stacktrace :app:assembleDebug -Pwyrix.legacyJni=true
 
       - name: Source statistics
         if: always()

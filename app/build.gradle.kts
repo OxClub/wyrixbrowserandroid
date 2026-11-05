@@ -66,7 +66,7 @@ android {
     }
     packaging {
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
-        jniLibs { useLegacyPackaging = false } // 16 KB page-size support
+        jniLibs { useLegacyPackaging = providers.gradleProperty("wyrix.legacyJni").orElse("false").get().toBoolean() } // 16 KB page-size support
     }
     testOptions { unitTests.isReturnDefaultValues = true }
     sourceSets {

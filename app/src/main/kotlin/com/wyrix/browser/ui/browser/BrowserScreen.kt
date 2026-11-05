@@ -53,6 +53,8 @@ fun BrowserScreen(vm: BrowserViewModel) {
     val screen by vm.screen.collectAsStateWithLifecycle()
     val session by vm.session.collectAsStateWithLifecycle()
     val fullscreen by vm.fullscreen.collectAsStateWithLifecycle()
+    val pip by vm.pip.collectAsStateWithLifecycle()
+    val bare = fullscreen || pip
     val privateMode by vm.privateMode.collectAsStateWithLifecycle()
     val ctxMenu by vm.contextMenu.collectAsStateWithLifecycle()
     val s = settings ?: return
@@ -132,8 +134,8 @@ fun BrowserScreen(vm: BrowserViewModel) {
     }
 
     Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-        Column(Modifier.fillMaxSize().then(if (fullscreen) Modifier else Modifier.windowInsetsPadding(WindowInsets.systemBars.union(WindowInsets.displayCutout)).imePadding())) {
-            if (!fullscreen && top) chrome()
+        Column(Modifier.fillMaxSize().then(if (bare) Modifier else Modifier.windowInsetsPadding(WindowInsets.systemBars.union(WindowInsets.displayCutout)).imePadding())) {
+            if (!bare && top) chrome()
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 GeckoViewHost(if (locked) null else session, vm.runtime, Modifier.fillMaxSize(), onView = { geckoView = it })
                 if (tab != null && (tab.showHome || tab.url.isBlank())) HomeScreen(vm, onStartEdit = { startEdit() })
@@ -167,9 +169,9 @@ fun BrowserScreen(vm: BrowserViewModel) {
                     }
                 }
             }
-            if (!fullscreen && !top) chrome()
+            if (!bare && !top) chrome()
         }
-        if (fullscreen) FilledTonalButton(onClick = { vm.exitFullscreen() }, modifier = Modifier.align(androidx.compose.ui.Alignment.TopEnd).windowInsetsPadding(WindowInsets.systemBars).padding(8.dp)) { Text("Exit full screen") }
+        if (fullscreen && !pip) FilledTonalButton(onClick = { vm.exitFullscreen() }, modifier = Modifier.align(androidx.compose.ui.Alignment.TopEnd).windowInsetsPadding(WindowInsets.systemBars).padding(8.dp)) { Text("Exit full screen") }
 
         when (screen) {
             Screen.TABS -> TabSwitcher(vm)

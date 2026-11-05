@@ -31,6 +31,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        addOnPictureInPictureModeChangedListener { vm.setPip(it.isInPictureInPictureMode) }
         // Touch the runtime early so engine start-up overlaps with first composition.
         vm.runtime
         setContent {

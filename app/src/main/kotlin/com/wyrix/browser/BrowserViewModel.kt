@@ -58,6 +58,9 @@ class BrowserViewModel(private val app: WyrixApp) : ViewModel() {
     val session: StateFlow<GeckoSession?> = _session.asStateFlow()
     private val _fullscreen = MutableStateFlow(false)
     val fullscreen: StateFlow<Boolean> = _fullscreen.asStateFlow()
+    private val _pip = MutableStateFlow(false)
+    val pip: StateFlow<Boolean> = _pip.asStateFlow()
+    fun setPip(on: Boolean) { _pip.value = on }
     private val _requests = MutableStateFlow<List<PromptRequest>>(emptyList())
     val requests: StateFlow<List<PromptRequest>> = _requests.asStateFlow()
     private val _context = MutableStateFlow<ContextMenuInfo?>(null)
