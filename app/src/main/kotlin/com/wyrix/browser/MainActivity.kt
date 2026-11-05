@@ -82,7 +82,7 @@ class MainActivity : ComponentActivity() {
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
         // Android 12+ enters automatically (auto-enter); this covers Android 9-11.
-        if (vm.fullscreen.value && Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+        if ((vm.fullscreen.value || vm.mediaPlaying()) && !(vm.fullscreen.value && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)) {
             runCatching { enterPictureInPictureMode(pipParams(false)) }
         }
     }

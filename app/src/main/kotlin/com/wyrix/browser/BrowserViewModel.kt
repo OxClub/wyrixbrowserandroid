@@ -60,7 +60,8 @@ class BrowserViewModel(private val app: WyrixApp) : ViewModel() {
     val fullscreen: StateFlow<Boolean> = _fullscreen.asStateFlow()
     private val _pip = MutableStateFlow(false)
     val pip: StateFlow<Boolean> = _pip.asStateFlow()
-    fun setPip(on: Boolean) { _pip.value = on }
+    fun setPip(on: Boolean) { _pip.value = on; selectedSession()?.setKeepPlaying(on) }
+    fun mediaPlaying(): Boolean = selectedSession()?.mediaPlaying == true
     private val _requests = MutableStateFlow<List<PromptRequest>>(emptyList())
     val requests: StateFlow<List<PromptRequest>> = _requests.asStateFlow()
     private val _context = MutableStateFlow<ContextMenuInfo?>(null)
