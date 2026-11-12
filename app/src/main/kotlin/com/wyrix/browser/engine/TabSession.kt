@@ -259,6 +259,7 @@ class TabSession(
         override fun onLoginSelect(session: GeckoSession, request: GeckoSession.PromptDelegate.AutocompleteRequest<Autocomplete.LoginSelectOption>): GeckoResult<GeckoSession.PromptDelegate.PromptResponse>? {
             val options = request.options
             if (options.isEmpty()) return GeckoResult.fromValue(request.dismiss())
+            if (options.size == 1) return GeckoResult.fromValue(request.confirm(options[0]))
             val r = GeckoResult<GeckoSession.PromptDelegate.PromptResponse>()
             val names = options.map { it.value.username.orEmpty().ifBlank { "(no username)" } }
             val host = UrlTools.hostOf(options[0].value.origin.orEmpty()) ?: ""

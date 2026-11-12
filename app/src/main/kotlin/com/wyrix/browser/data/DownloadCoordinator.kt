@@ -53,7 +53,7 @@ class DownloadCoordinator(
         val name = FilenameSanitizer.sanitize(req.fileNameHint, req.url, req.mime)
         val scheme = UrlTools.scheme(req.url)
         return when (scheme) {
-            "http", "https" -> { req.body?.closeQuietly(); enqueueViaManager(req, name) }
+            "http", "https" -> if (req.body != null) streamToDisk(req, name) else enqueueViaManager(req, name)
             "blob", "data" -> streamToDisk(req, name)
             else -> { req.body?.closeQuietly(); DownloadOutcome.Unsupported("Downloads from \"$scheme:\" addresses aren't supported.") }
         }
@@ -81,18 +81,20 @@ class DownloadCoordinator(
 
     private suspend fun streamToDisk(req: DownloadRequest, name: String): DownloadOutcome {
         val body = req.body ?: return DownloadOutcome.Unsupported("This download has no data available to save.")
-        val rowId = if (req.record) dao.insert(DownloadEntity(dmId = null, url = "blob/data", fileName = name, mime = req.mime,
+        val rowId = if (req.record) dao.insert(DownloadEntity(dmId = null, url = if (req.url.startsWith("http")) req.url else "blob/data", fileName = name, mime = req.mime,
             status = DownloadStatus.RUNNING, totalBytes = req.contentLength, downloadedBytes = 0, localUri = null,
             startedAt = System.currentTimeMillis())) else -1L
         scope.launch(Dispatchers.IO) {
             try {
                 val (uri, finish) = openOutput(name, req.mime)
-                var total = 0L
+                var total = 0L; var lastTick = 0L
                 body.use { input -> context.contentResolver.openOutputStream(uri)!!.use { out ->
-                    val buf = ByteArray(64 * 1024)
+                    val buf = ByteArray(256 * 1024)
                     while (true) {
                         val n = input.read(buf); if (n < 0) break
                         out.write(buf, 0, n); total += n
+                        val now = System.currentTimeMillis()
+                        if (rowId >= 0 && now - lastTick > 700) { lastTick = now; dao.byId(rowId)?.let { dao.update(it.copy(downloadedBytes = total)) } }
                     }
                 } }
                 finish()

@@ -35,7 +35,11 @@ class LoginStorageBridge(
         val result = GeckoResult<Array<Autocomplete.LoginEntry>>()
         fun deliver() {
             scope.launch {
-                val entries = vault.findForHost(domain).map { it.toEntry() }.toTypedArray()
+                val host = (com.wyrix.browser.core.UrlTools.hostOf(domain) ?: domain).lowercase().removePrefix("www.")
+                val entries = vault.all().filter {
+                    val h = it.host.lowercase().removePrefix("www.")
+                    h == host || h.endsWith(".$host") || host.endsWith(".$h")
+                }.sortedByDescending { it.lastUsed }.map { it.toEntry() }.toTypedArray()
                 result.complete(entries)
             }
         }
